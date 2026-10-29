@@ -1,0 +1,3 @@
+npm run verify
+npm run build
+npm test

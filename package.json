@@ -1,0 +1,30 @@
+{
+  "name": "midd-nestjs-hexagonal-architecture-mcp",
+  "version": "0.1.0",
+  "description": "Hybrid MCP server of the Middleware area: guides (agentic flow), generates (deterministic templates) and verifies (compliance) NestJS hexagonal microservices with JSON:API and the mandatory security baseline.",
+  "license": "UNLICENSED",
+  "type": "module",
+  "bin": {
+    "midd-nestjs-hexagonal-mcp": "dist/index.js"
+  },
+  "files": [
+    "dist",
+    "templates"
+  ],
+  "scripts": {
+    "build": "tsc",
+    "start": "node dist/index.js",
+    "dev": "tsc --watch",
+    "test": "tsc && node --test \"test/**/*.test.mjs\"",
+    "test:e2e": "tsc && node --test --test-timeout=1800000 test/e2e/compile.e2e.mjs"
+  },
+  "dependencies": {
+    "@modelcontextprotocol/sdk": "^1.0.4",
+    "yaml": "2.6.1",
+    "zod": "^3.23.8"
+  },
+  "devDependencies": {
+    "@types/node": "^20.11.0",
+    "typescript": "^5.4.0"
+  }
+}

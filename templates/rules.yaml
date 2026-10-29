@@ -1,0 +1,418 @@
+# ═══════════════════════════════════════════════════════════════════════════
+# rules.yaml — Cerebro de calidad del MCP midd-hexagonal-nestjs
+#
+# QUÉ ES: la fuente de verdad, AGNÓSTICA DE DOMINIO, de las convenciones de
+# arquitectura y calidad de código del área Middleware. Lo consume el agente
+# (vía la tool get_rules) ANTES de generar un servicio nuevo o refactorizar uno
+# existente, para que cualquier módulo salga con la MISMA estructura y cualquier
+# dev del equipo sepa moverse por el código.
+#
+# AGNÓSTICO DE DOMINIO: aquí no hay ningún "enrollment", "lockType", etc. Esos
+# nombres los pone el usuario en tiempo de generación (en el middleware.spec.yaml
+# o en los parámetros de add_use_case). Este archivo solo describe la FORMA y la
+# CALIDAD, no el negocio.
+#
+# FUENTE DE VERDAD DEL ESTILO: el repo canónico `midd-pf-enrollment`. Los
+# snippets de este archivo están DESTILADOS de ese repo (inline, sin rutas a
+# máquinas concretas) para que el patrón viaje con el MCP. Los errores
+# ortográficos del canon (p.ej. "infraestructure", "Adapater", un archivo con
+# coma "<nombre>,entity.ts") NO son estándar: son anti-patrones que
+# verify_standards bloquea (ver `naming.anti_patrones`).
+# ═══════════════════════════════════════════════════════════════════════════
+
+version: 2              # v2: híbrido (estructura/excepciones/códigos del canon + seguridad y ruta del MCP de la librería)
+stack: nestjs            # este MCP es exclusivamente NestJS + TypeORM/SP (mssql, postgres o mysql)
+fuente_de_verdad: "midd-pf-enrollment (repo canónico del área)"
+
+# ─── Principios rectores ───────────────────────────────────────────────────
+principios:
+  - "Arquitectura hexagonal: el dominio no conoce la infraestructura. Las dependencias apuntan hacia el core."
+  - "Depende de puertos (interfaces), nunca de clases concretas. El cableado concreto vive en los módulos."
+  - "KISS/YAGNI: empieza en complejidad 0 y sube de nivel solo ante una señal concreta del requerimiento."
+  - "Agnóstico de dominio: module/entity/use cases los define el usuario; el MCP aporta forma y calidad."
+  - "El MCP nunca inventa reglas de negocio ni columnas: se extraen del usuario o de la tabla/schema real."
+  - "Consistencia por encima de preferencia personal: todo módulo nuevo luce igual que el canónico."
+
+# ─── Estructura de carpetas (vertical slice por dominio) ───────────────────
+# Carpeta de dominio en lowercase; clases en PascalCase (independiente del case
+# con que se pase el nombre del dominio). Un dominio agrupa N casos de uso.
+estructura:
+  raiz_dominio: "src/<dominio-lowercase>/"
+  arbol:
+    - "<dominio>.module.ts                                  # módulo raíz del bounded context (ensambla core + infra)"
+    - "core/"
+    - "core/<dominio>.core.module.ts                        # register(): factories de domain/application services + tokens"
+    - "core/domain/entities/                                # entidades de dominio PURAS (sin decoradores de framework)"
+    - "core/domain/ports/inbound/I<Caso>Service.ts          # puerto DRIVING (lo que el caso ofrece hacia adentro)"
+    - "core/domain/ports/outbound/I<Caso>Repository.ts      # puerto DRIVEN (lo que el caso necesita de afuera)"
+    - "core/domain/services/<caso>.domain.service.ts        # lógica de dominio; implementa el puerto inbound"
+    - "core/domain/errors/<dominio>.domain.error.ts         # catálogo de errores de dominio (code/title/status)"
+    - "core/application/interfaces/I<Caso>Application.ts     # contrato del caso de uso de aplicación"
+    - "core/application/services/<caso>.application.ts       # orquesta reglas de negocio; usa puerto inbound + config"
+    - "core/application/errors/<dominio>.application.error.ts"
+    - "infrastructure/infrastructure.<dominio>.module.ts     # declara adapters + TypeOrmModule.forFeature (si aplica)"
+    - "infrastructure/adapters/<caso>.typeorm.adapter.ts     # adapter TypeORM (default) — implementa el puerto outbound"
+    - "infrastructure/adapters/<caso>.sp.adapter.ts          # adapter Stored Procedure (opt-in) — implementa el puerto outbound"
+    - "infrastructure/http-server/http-server.module.ts"
+    - "infrastructure/http-server/controllers/<caso>.controller.ts  # JSON:API + @Controller({ path, version }) + try/catch -> CustomHttpException"
+    - "infrastructure/http-server/dto/<caso>.dto.ts                 # class de attributes con class-validator"
+    - "infrastructure/http-server/dto/<caso>RequestJsonApi.dto.ts   # envoltura JSON:API { data: { attributes } }"
+    - "infrastructure/sql-database/entities/<Entidad>.entity.ts     # entidad TypeORM (solo si adapter=typeorm)"
+
+# ─── Naming (convenciones de nombres) ───────────────────────────────────────
+naming:
+  carpeta_dominio: "lowercase"            # p.ej. src/catalog/ (aunque el dominio se pase como 'Catalog')
+  clases: "PascalCase"                    # p.ej. CatalogController, RetrieveProductAdapter
+  metodos_y_params: "camelCase"
+  prefijo_error: "MAYUSCULAS"             # p.ej. CATALOG
+  puerto_inbound: "I<Caso>Service"        # interface del servicio de dominio (driving)
+  puerto_outbound: "I<Caso>Repository"    # interface del repositorio/fuente (driven)
+  archivo_entidad: "<nombre>.entity.ts"   # SIEMPRE con punto antes de 'entity'
+  archivo_adapter_typeorm: "<caso>.typeorm.adapter.ts"
+  archivo_adapter_sp: "<caso>.sp.adapter.ts"
+  archivo_controller: "<caso>.controller.ts"
+  tokens_inyeccion: "CONSTANTE_EN_MAYUSCULAS"   # p.ej. RETRIEVEPRODUCT_APPLICATION (string tokens)
+  # Anti-patrones: errores ortográficos observados en el canon que NO deben
+  # replicarse. verify_standards los marca como ERROR bloqueante.
+  anti_patrones:
+    - { patron: "infraestructure", correcto: "infrastructure", nota: "typo histórico en carpeta de infra" }
+    - { patron: "htttp-server", correcto: "http-server", nota: "triple t" }
+    - { patron: "Adapater", correcto: "Adapter", nota: "typo en nombre de adapter" }
+    - { patron: ",entity.ts", correcto: ".entity.ts", nota: "coma en vez de punto en archivo de entidad" }
+    - { patron: "archivo con espacios", correcto: "sin espacios", nota: "nombres de archivo sin espacios" }
+
+# ─── Puertos inbound / outbound ─────────────────────────────────────────────
+# REGLA CLAVE (destilada del canon): un puerto NO es "1 método". Un caso de uso
+# puede exponer N MÉTODOS en su puerto inbound, cada uno con su entidad request
+# y su entidad response tipadas (NO `string` genérico). El puerto outbound
+# refleja esos mismos métodos hacia la fuente de datos.
+puertos:
+  modelo: "un caso de uso = 1 puerto inbound (I<Caso>Service) + 1 puerto outbound (I<Caso>Repository) + N métodos"
+  metodos:
+    firma: "<metodo>(data: <EntidadRequest>): Promise<<EntidadResponse>>"
+    reglas:
+      - "Cada método declara su entidad request y su entidad response como entidades de dominio puras (core/domain/entities/*.entity.ts)."
+      - "HEXAGONAL PURO: el nombre del stored procedure es un detalle de INFRAESTRUCTURA — NO viaja por el puerto. La firma del método es uniforme entre SP y TypeORM: (data: Request). El core no conoce que detrás hay un SP."
+      - "El adapter SP resuelve el nombre del SP desde ConfigurationVariables.storedProcedures.<Nombre> internamente."
+      - "Evita `any` en las firmas de puerto. Los tipos del core son el contrato."
+      - "El puerto inbound y el outbound exponen EXACTAMENTE los mismos métodos; el domain service delega 1:1 en el repositorio."
+      - "Branching de negocio (elegir entre operaciones según un valor): modélalo como MÉTODOS distintos del puerto (uno por variante), no pasando el nombre del SP. Si el application service necesita decidir, inyecta config y llama al método correspondiente."
+  ejemplo_inbound: |
+    // core/domain/ports/inbound/IRetrieveLockTypeService.ts
+    import { BaseClassLockType } from '../../entities/baseClassLockType.entity'
+    import { LockTypeResponse } from '../../entities/lockTypeResponse.entity'
+    import { RetrieveLockTypeTvRequest } from '../../entities/retrieveLockTypeTvRequest.entity'
+    import { RetrieveLockTypeTvResponse } from '../../entities/retrieveLockTypeTvResponse.entity'
+
+    // El puerto NO conoce stored procedures: solo data tipada. Una variante de
+    // negocio = un método distinto del puerto.
+    export interface IRetrieveLockTypeService {
+      retrieveLockTypePhone(data: BaseClassLockType): Promise<LockTypeResponse>
+      retrieveLockTypeTvMacrolock(data: RetrieveLockTypeTvRequest): Promise<RetrieveLockTypeTvResponse>
+    }
+  ejemplo_application: |
+    // core/application/services/retrieveLockTypes.application.ts
+    // Si hay branching de negocio, el application service elige el MÉTODO del
+    // puerto (no el nombre del SP). El SP lo resuelve el adapter por dentro.
+    if (data.productType === 'phone') {
+      return this.retrieveLockTypeService.retrieveLockTypePhone(data)
+    }
+    return this.retrieveLockTypeService.retrieveLockTypeTvMacrolock(data)
+
+# ─── Entidades de dominio ───────────────────────────────────────────────────
+entidades:
+  reglas:
+    - "Entidad de dominio = clase PURA, sin decoradores de framework (salvo class-transformer @Expose para mapeo de columnas)."
+    - "Separa request y response en entidades distintas por método cuando difieren."
+    - "Usa @Expose({ name: '<columna_real>' }) para mapear snake_case/columnas de BD a la propiedad de dominio."
+    - "La entidad TypeORM (sql-database/entities/*.entity.ts) es DISTINTA de la entidad de dominio; solo existe con adapter=typeorm."
+  ejemplo_response: |
+    // core/domain/entities/lockTypeResponse.entity.ts  (DESTILADO del canon)
+    import { Expose } from 'class-transformer'
+
+    export class LockTypeResponse {
+      @Expose({ name: 'tipo_bloqueo' })
+      LockTypeId: number
+    }
+
+# ─── DTOs de frontera (capa HTTP, JSON:API) ─────────────────────────────────
+dtos:
+  reglas:
+    - "El DTO de entrada expone EXACTAMENTE los attributes que el caso consume (no pidas campos que luego se ignoran)."
+    - "Input DTO NO incluye campos server-generados (id, created_at); esos solo viven en la respuesta."
+    - "Validación estructural con class-validator (@IsString, @IsNotEmpty, ...). La regla de NEGOCIO NO va aquí, va en application."
+    - "El request se envuelve en el sobre JSON:API { data: { attributes } }."
+  contrato_jsonapi:
+    request: "{ data: { attributes: <AttributesDTO> } }"
+    response: "new ResponseJsonApiBase({ attributes, type: '<tipo-recurso-kebab>', links: req?.url })"
+  generacion_desde_spec:
+    - "generate_from_spec materializa dtos.input en el DTO de attributes (con validadores class-validator) y en la entidad request de dominio."
+    - "dtos.output se materializa en la entidad response de dominio (campos opcionales)."
+    - "Los tipos se derivan del spec (string/number/boolean). SIEMPRE con NOTA de revisar tipos/obligatoriedad/validadores contra el esquema real (el MCP no inventa columnas)."
+
+# ─── Acceso a datos ─────────────────────────────────────────────────────────
+acceso_datos:
+  default: "typeorm"
+  sp_es_opt_in: true            # Stored Procedure requiere adapterType='sp' + nombreSp explícito
+  motores: [mssql, postgres, mysql]
+  reglas:
+    - "El motor de BD se PREGUNTA siempre en una API nueva (mssql | postgres | mysql); nunca se asume. Define driver, opciones de TypeORM y dialecto del SP."
+    - "Variables de BD por conexión: DB_<CONEXION>_HOST/PORT/USERNAME/PASSWORD/NAME. El driver va en dependencies (el Dockerfile instala con --omit=dev)."
+    - "Cada conexión adicional se crea completa (módulo, opciones, variables, Joi, .env.example). Un motor distinto al de una conexión existente se rechaza."
+    - "Las entidades se cargan con autoLoadEntities: true; el módulo de cada dominio las declara con TypeOrmModule.forFeature([...], '<Conexion>Connection')."
+    - "El SP se invoca según el dialecto: mssql EXEC, mysql CALL, postgres SELECT * FROM fn($1..) (solo funciones; los procedimientos CALL de Postgres no están soportados). El adapter SP inyecta el servicio de SU conexión."
+    - "TypeORM es el default. Stored Procedure es opt-in explícito (nunca se asume)."
+    - "El adapter SP ejecuta vía IdatabaseCommonService.executeStoredProcedure(sp, data, true) y mapea con Mapper(Clase, resultado)."
+    - "Hexagonal puro: el adapter SP resuelve el nombre del SP desde ConfigurationVariables.storedProcedures.<Nombre> INTERNAMENTE. El nombre del SP NO viaja por el puerto (es infraestructura)."
+    - "El Mapper usa class-transformer con excludeExtraneousValues: true (solo propiedades @Expose)."
+  ejemplo_adapter_sp: |
+    // infrastructure/adapters/retrieveLockTypes.adapter.ts
+    import { Inject } from '@nestjs/common'
+    import { ConfigType } from '@nestjs/config'
+    import { IdatabaseCommonService } from '../../../Shared/utils/interfaces/IdatabaseCommonService'
+    import { DATABASE_COMMON_PROCESS_SERVICES_ADAPTER } from '../../../Shared/utils/utils.module'
+    import ConfigurationVariables from '../../../Shared/infrastructure/config/ConfigurationVariables'
+    import { Mapper } from '../../../Shared/utils/services/mapService'
+
+    export class retrieveLockTypeRepositoryAdapter implements IRetrieveLockTypeRepository {
+      constructor(
+        @Inject(DATABASE_COMMON_PROCESS_SERVICES_ADAPTER) private readonly dbProcessCommon: IdatabaseCommonService,
+        @Inject(ConfigurationVariables.KEY) private readonly config: ConfigType<typeof ConfigurationVariables>
+      ) {}
+
+      // Hexagonal puro: el adapter resuelve el SP por config; el puerto solo ve data.
+      async retrieveLockTypePhone(data: BaseClassLockType): Promise<LockTypeResponse> {
+        return Mapper(
+          LockTypeResponse,
+          await this.dbProcessCommon.executeStoredProcedure<LockTypeResponse>(
+            this.config.storedProcedures.GetLockTypePhone,
+            data,
+            true
+          )
+        )
+      }
+    }
+
+# ─── Reglas de negocio ──────────────────────────────────────────────────────
+# Las reglas de negocio viven en el APPLICATION SERVICE, no en los DTOs ni en el
+# adapter. Se expresan como guardas que lanzan GenericException con un error del
+# catálogo (code/title/status/suggestedActions).
+reglas_negocio:
+  ubicacion: "core/application/services/<caso>.application.ts"
+  reglas:
+    - "Una regla de negocio es una guarda: valida una condición y, si no se cumple, lanza GenericException con un error del catálogo."
+    - "El branching por tipo/categoría de negocio se resuelve con if/guardas sobre config (p.ej. productType), no con subclases salvo que el requerimiento lo exija."
+    - "Loguea los pasos relevantes con LoggerService (debug/info) para trazabilidad."
+  generacion_desde_spec:
+    - "generate_from_spec materializa cada regla del spec como una guarda en el application service del caso."
+    - "Intenta INFERIR la condición real por patrón (obligatorio, unicidad, enum/valores, existencia/404, branching); cuando no reconoce el patrón, deja andamiaje comentado."
+    - "SIEMPRE estampa una NOTA (para agentes y usuarios): la condición es una APROXIMACIÓN del texto y debe revisarse/ajustarse al requerimiento real. El MCP no inventa reglas."
+    - "Guardas que dependen del resultado (404) o de un método de puerto inexistente (unicidad) se generan COMENTADAS para evitar romper la compilación; el dev las activa."
+    - "A falta de asociación regla↔caso en el spec, las reglas se aplican al PRIMER caso; muévelas si pertenecen a otro."
+  ejemplo_guarda: |
+    // core/application/services/retrieveLockTypes.application.ts  (DESTILADO del canon)
+    if (!lockType?.LockTypeId) {
+      throw new GenericException(
+        `No hay un tipo de bloqueo definido para este IMEI ${data.imei}.`,
+        { code: 'ENROLLMENT-LOCKTYPENOTFOUND-0011', title: 'Tipo de bloqueo no encontrado.', status: 404, suggestedActions: 'Valide que los parámetros enviados sean correctos.' }
+      )
+    }
+
+# ─── Catálogo de errores ────────────────────────────────────────────────────
+errores:
+  formato_codigo: "<PREFIJO>-<SLUG>-<NNNN>"   # p.ej. ENROLLMENT-LOCKTYPENOTFOUND-0011
+  campos: [code, title, status, suggestedActions]
+  campos_opcionales: [message]                 # 'message' con plantillas {param} en errores de dominio
+  dominio_vs_aplicacion:
+    dominio: "core/domain/errors/<dominio>.domain.error.ts — errores de reglas del dominio"
+    aplicacion: "core/application/errors/<dominio>.application.error.ts — errores de validación/orquestación de aplicación"
+  lanzamiento: "GenericException(message, errorObject) en core; CustomHttpException en el controller (capa HTTP)."
+
+# ─── Controller / HTTP ──────────────────────────────────────────────────────
+http:
+  # URL OBLIGATORIA: /{context}/api/v{N}/{resource}  (p.ej. /calculator/api/v1/amortization-save)
+  #   {context}  = nombre del servicio, GLOBAL y estable. main.ts: app.setGlobalPrefix(config.ApiContext).
+  #                Sale de API_CONTEXT (validada en Joi, requerida). NUNCA un literal y NUNCA lleva la versión.
+  #   api/v{N}   = segmento versionado, vive DENTRO de cada controller:
+  #                main.ts: app.enableVersioning({ type: URI, prefix: 'api/v', defaultVersion: '1' })
+  #                controller: @Controller({ path: '<recurso>', version: '1' })
+  #   Razón: la versión es POR ENDPOINT. Subir un controller a v2 no mueve los demás. Poner la versión
+  #   en el prefijo global ataría TODO el servicio a una sola versión.
+  reglas:
+    - "Cada controller declara su versión en @Controller({ path, version }). La primera versión SIEMPRE es '1'. No se usa @Version por método."
+    - "El prefijo global es SOLO el contexto (API_CONTEXT). Jamás incluye 'api' ni la versión."
+    - "El path del @Controller es kebab-case del dominio/recurso."
+    - "El handler desempaqueta { data: { attributes } }, llama al application service y responde con ResponseJsonApiBase."
+    - "Todo handler envuelve su cuerpo en try/catch y relanza como CustomHttpException preservando code/title/status/suggestedActions/stack."
+    - "Los verbos de escritura/consulta del área usan @Post con @HttpCode(200) (contrato del área)."
+    - "SOLO @Post (política de Ciberseguridad): lecturas, listados, updates y deletes viajan como POST con la intención en el body. Cualquier otro verbo es NON_POST_ENDPOINT (bloqueante) y responde 406."
+    - "Todo servicio nuevo (scaffold_service) trae un health de liveness: POST /{contexto}/api/v1/health, con las mismas reglas que el resto (POST-only, vnd.api+json, sobre JSON:API). Responde 200 con status UP apenas el borde HTTP está arriba y no consulta nada más (ni BD, ni versión, ni host). Con autorización activa sigue público (@SkipAuthorization); HEALTH_NOT_PUBLIC lo exige."
+    - "Content-Type application/vnd.api+json es obligatorio en el request (415 si no) y el body parser del tipo vnd.api+json lleva un 'limit' explícito."
+    - "CONFLICTO CON EL SPEC: si el spec del usuario contradice POST-only, vnd.api+json o el sobre JSON:API, el agente NO sigue el spec en silencio NI lo sobreescribe en silencio: se detiene y pregunta cuál manda (estándar del área vs spec) por cada punto en conflicto."
+
+# ─── Inyección de dependencias / módulos ────────────────────────────────────
+inyeccion:
+  reglas:
+    - "El core.module expone register() que construye los providers con useFactory, inyectando el adapter outbound por su token."
+    - "Los tokens de inyección son constantes string en MAYUSCULAS exportadas desde el core.module."
+    - "El <dominio>.module raíz mapea los adapters concretos a las llaves <caso>OutBound que espera register()."
+    - "En refactor, NUNCA se toca app.module ni módulos ajenos: eso lo integra el agente respetando la convención del proyecto."
+
+# ─── Seguridad (exigida por Ciberseguridad, verify_standards la bloquea) ────
+seguridad:
+  # TODO lo de esta sección es OBLIGATORIO y bloqueante en verify_standards. No es decisión del agente
+  # omitirlo ni "simplificarlo". La capa vive en shared/infrastructure/security y observability (se crea
+  # UNA vez por servicio con scaffold_service, nunca por dominio).
+  main_ts_obligatorio:
+    - "Helmet activo"
+    - "HSTS con max-age 31536000 (1 año)"
+    - "Content-Security-Policy"
+    - "X-Content-Type-Options: nosniff"
+    - "Referrer-Policy"
+    - "Permissions-Policy"
+    - "Cache-Control: no-store GLOBAL en CADA respuesta, registrado como el PRIMER app.use() para que también lo lleven los rechazos (401/403/413/429)."
+    - "CORS configurado explícitamente desde CORS_ALLOWED_ORIGINS (lista separada por coma). Nunca enableCors() vacío ni un origin literal en el código. CORS_ALLOWED_ORIGINS vale '*' POR DEFECTO (default del schema Joi y valor del .env.example): se TOLERA para un middleware servidor-a-servidor, decisión del área. No se registra ningún aviso por eso. Cuando se definan los dominios reales basta con ponerlos en esa variable de entorno, sin tocar código. Lo que SÍ se reporta (WARN CORS_WILDCARD) es un '*' escrito a mano en main.ts, porque impediría configurar orígenes reales. Detalle técnico: el paquete cors solo trata como comodín el STRING '*', no un '*' dentro de un arreglo, por eso main.ts lo detecta y pasa '*' explícito."
+  orden_del_borde_http:
+    - "1. Cache-Control: no-store"
+    - "2. Correlation id"
+    - "3. Payload size (C3) - antes de parsear el body"
+    - "4. Helmet + cabeceras extra + CORS"
+    - "5. Body parser vnd.api+json (con limit)"
+    - "6. Filtro global de excepciones, ValidationHeaderMiddleware, ValidationPipe"
+    - "7. Guards globales (APP_GUARD): rate limit PRIMERO, autorización DESPUÉS (para que una avalancha se descarte antes de gastar llamadas al autorizador)."
+  rate_limiting:
+    regla: "Los TRES controles son obligatorios. Implementar solo uno es INCOMPLETE_RATE_LIMITING."
+    c1_tasa_por_ip: "Máx 150 req por IP en ventana FIJA de 5 s (bucket con recarga completa). Excederlo: 429 + Retry-After: 5."
+    c2_concurrencia_por_ip: "Máx 20 requests en vuelo por IP. El contador se libera en 'finish' y en 'close' (también ante error), una sola vez. Excederlo: 429."
+    c3_tamano_payload: "Máx 8 MB cualquier tipo; máx 2 MB si el Content-Type es *json* (incluye application/vnd.api+json). Se valida por Content-Length ANTES de parsear. Excederlo: 413. El limit del body parser es la segunda línea de defensa."
+    anti_spoofing: "X-Forwarded-For solo se respeta si el peer directo está en RL_TRUSTED_PROXIES (CIDR); se toma la PRIMERA IP. Si no, se usa la IP de la conexión. Un único resolvedor compartido por C1 y C2."
+    anti_fuga_de_memoria: "Contadores por IP en caché acotada: expira por inactividad (RL_CACHE_TTL_MS) y tiene tope de entradas (RL_CACHE_MAX_ENTRIES), con descarte de la más antigua."
+    rutas_excluidas: "GET / y cualquier ruta /actuator*."
+    multi_instancia: "El estado es en memoria por instancia. Si el servicio corre en varias réplicas, respaldar con un store compartido (p.ej. Redis) para que los contadores sean consistentes."
+  env:
+    - ".env.example sincronizado con el schema Joi (toda clave del schema presente). Se genera desde el Joi, incluyendo los .default()."
+    - "Variables obligatorias en Joi: API_CONTEXT, CORS_ALLOWED_ORIGINS (default '*'), RL_MAX_REQUESTS_PER_WINDOW, RL_WINDOW_SECONDS, RL_MAX_CONCURRENT_PER_IP, RL_MAX_PAYLOAD_BYTES, RL_MAX_JSON_PAYLOAD_BYTES, RL_CACHE_TTL_MS, RL_CACHE_MAX_ENTRIES, RL_TRUSTED_PROXIES."
+    - "Nunca commitear secretos reales; .env.example solo con placeholders."
+    - "Nada lee process.env fuera de ConfigurationVariables (ENV_DIRECT). Los valores se leen de forma perezosa dentro de registerAs, después de que ConfigModule cargó y validó el .env."
+  logs:
+    - "Nunca loguear credenciales: consumoHttp redacta Authorization/Cookie/x-api-key antes de loguear las cabeceras de un error."
+    - "Nunca console.* (CONSOLE_LOG): usar LoggerService, que antepone el correlation id a cada línea."
+
+# ─── Autorización del borde HTTP (OPT-IN: el agente PREGUNTA) ───────────────
+autorizacion:
+  decision: "El agente SIEMPRE pregunta al usuario si el servicio exige autorización. Nunca decide solo y nunca la omite en silencio. Si el usuario dice no, no se genera y se deja constancia en el reporte final."
+  herramienta: "add_authorization (se crea UNA vez por servicio en src/shared/authorization; idempotente)."
+  diseno:
+    puerto: "IAuthorizationVerifier (rol Verifier). Devuelve AuthorizationDecision { allowed, reason }, nunca un boolean pelado, para poder crecer sin romper llamadores. 'reason' es solo para logs del servidor."
+    adapter_por_defecto: "MacropayApiAuthorizationVerifier: POST {AUTHORIZATION_API_URL}/auth/validity con el Bearer del FRONT reenviado (no una credencial del servidor). 2xx = permitido. Usa consumoHttp (fetch nativo)."
+    guard: "AuthorizationGuard global (APP_GUARD): extrae el Bearer, pregunta al puerto y lanza 401 (sin token) o 403 (denegado). La lógica HTTP vive en el adapter, nunca en el guard."
+    modulo: "AuthorizationModule es el ÚNICO lugar que nombra el verifier concreto. Cambiar de autorizador = cambiar la línea useClass."
+  reglas:
+    - "SECURE-BY-DEFAULT: todo endpoint está protegido salvo que se marque @SkipAuthorization() (opt-OUT). Una omisión nunca deja un hueco. Solo para endpoints genuinamente públicos (health, webhooks entrantes); jamás sobre un controller de dominio completo para 'simplificar'."
+    - "FAIL-CLOSED: si el autorizador deniega O no responde, se rechaza con 403. No existe camino fail-open (AUTHORIZATION_FAIL_OPEN lo bloquea)."
+    - "ORDEN: AuthorizationModule se importa DESPUÉS de SecurityModule, para que el rate limit descarte una avalancha (429) sin gastar llamadas al autorizador (AUTHORIZATION_ORDER)."
+    - "Errores en el formato del área: SERVICE-UNAUTHORIZED-0020 (401) y SERVICE-FORBIDDEN-0021 (403). Nunca se expone el motivo ni la respuesta del autorizador."
+    - "Config: AUTHORIZATION_API_URL requerida y validada en Joi (sin default seguro), solo si se activó la autorización."
+
+# ─── Aprendizaje por repo (CONSULTIVO: nunca cuestiona las reglas base) ─────
+aprendizaje:
+  que_es: "El MCP recuerda, por repo y entre sesiones, convenciones propias, decisiones que el usuario tomó una vez y los errores del verificador que se repiten. Vive en docs/mcp-learnings.json, junto al inventario."
+  herramientas: "get_learnings (solo lectura; llamarla justo DESPUÉS de get_rules) y record_decision (lista cerrada; solo con respuesta explícita del usuario)."
+  principio: "Las reglas base (este archivo, el verificador y las plantillas) son inmutables. Lo aprendido solo puede AGREGAR ayuda: proponer defaults y avisar de errores frecuentes. Si algo aprendido choca con una regla base, manda la regla base."
+  garantias:
+    - "El verificador, el generador y las plantillas no leen lo aprendido: borrar o alterar el archivo no cambia qué está permitido."
+    - "Todo campo tiene forma cerrada (regex o lista). No hay texto libre: un texto escrito por un usuario o editado a mano en el archivo nunca se repite a un agente."
+    - "Lo que el agente lee sobre un error es un texto fijo del MCP, indexado por el ID de la regla, y solo explica cómo CUMPLIR la regla."
+    - "Nunca se aprende una preferencia que vuelva por defecto algo opt-in: el stored procedure sigue siendo opt-in y se pregunta siempre."
+    - "Un archivo ilegible se ignora y no se sobrescribe; aprender nunca rompe la herramienta que lo dispara."
+  que_se_registra:
+    - "Convenciones: contexto del servicio (API_CONTEXT), prefijos de error y conexiones ya usados."
+    - "Decisiones del usuario: autorización activada o desactivada."
+    - "Errores que se repiten: solo el ID de la regla y cuántas veces APARECIÓ (una violación que sobrevive varios intentos de arreglo cuenta una vez). Se muestra a partir de 2."
+  uso_por_el_agente: "Proponer defaults y evitar preguntar de más, siempre confirmando con el usuario; pasar los errores que se repiten al worker. Nunca aplicar nada en silencio."
+
+# ─── Dependencias: prohibidas (bloqueantes en verify_standards) ─────────────
+# Principio: la mejor dependencia es la que no existe, porque no puede tener un CVE. Antes de agregar
+# un paquete, usa lo que ya trae Node o el stack.
+dependencias:
+  prohibidas:
+    axios:
+      usar_en_su_lugar: "fetch nativo. El cliente del área es shared/utils/services/consumoHttp.ts."
+      por_que: "Menos superficie de ataque y de CVEs, una dependencia menos que actualizar. Node >= 22 trae fetch y AbortSignal.timeout."
+      contrato_de_consumoHttp:
+        - "No lanza: ante error devuelve { status, data: null, statusText, responseErrorApi } para que el adapter decida qué DomainError/GenericException lanzar."
+        - "Nunca asume que la respuesta es JSON: un body vacío o no JSON no tumba al llamador."
+        - "Timeout con AbortSignal.timeout (30 s por defecto, configurable por llamada con timeoutMs)."
+        - "Reenvía x-correlation-id y redacta Authorization/Cookie/x-api-key en los logs. No loguea el body ni la query (pueden llevar credenciales)."
+        - "statusText en fallas de red: ETIMEDOUT, ECONNREFUSED, ENOTFOUND (el código real del sistema)."
+    uuid:
+      usar_en_su_lugar: "randomUUID de 'node:crypto' (ver shared/utils/services/GeneratorUuidService.ts)."
+      por_que: "El paquete es solo ESM: compila pero revienta con ERR_REQUIRE_ESM en un build CommonJS. randomUUID es nativo y sin dependencias."
+  alcance_de_la_regla: "Se prohíbe DECLARAR o IMPORTAR estos paquetes (FORBIDDEN_DEPENDENCY / ESM_ONLY_IMPORT). Que aparezcan como dependencia interna de terceros (p.ej. uuid dentro de typeorm o mssql) es ajeno al proyecto y no se puede evitar."
+  http_en_core: "El core (domain/application) nunca hace HTTP directo (HTTP_IN_CORE): llega al exterior solo por un puerto outbound implementado en infrastructure."
+  prevencion_general:
+    - "Pocas dependencias: prefiere lo nativo (fetch, node:crypto, Logger de Nest) a un paquete."
+    - "Versiones fijas/conocidas y paquetes mantenidos; avisa de cualquier nombre inusual (posible typosquatting) antes de confiar en él."
+    - "Todo paquete de runtime sin tipos propios lleva su @types/* en devDependencies en el mismo paso."
+
+# ─── Observabilidad: correlation id ─────────────────────────────────────────
+observabilidad:
+  correlation_id:
+    cabecera: "x-correlation-id"
+    regla: "Independiente del llamador: si llega un id VÁLIDO se reutiliza (encadena flujos multi-servicio); si no llega o trae caracteres fuera de [A-Za-z0-9._-]{1,128}, se GENERA uno con randomUUID de node:crypto. Nunca se depende del frontend."
+    por_que_se_sanea: "Un id arbitrario del llamador podría falsificar líneas de log (log forging)."
+    por_que_node_crypto: "El paquete npm 'uuid' es solo ESM: compila pero revienta con ERR_REQUIRE_ESM en un build CommonJS. randomUUID es nativo y sin dependencias (ESM_ONLY_IMPORT lo detecta)."
+    debe_aparecer_en:
+      - "CADA línea de log del request (AsyncLocalStorage, sin pasarlo a mano por las funciones)."
+      - "Las llamadas salientes a fuentes externas (consumoHttp lo reenvía como x-correlation-id)."
+      - "El header de la respuesta."
+      - "El sobre de error: errors[] + meta.correlationId."
+
+# ─── Documentación de la API (generada desde el código) ───────────────────────
+documentacion:
+  principio: "La documentación sale del código real (controllers, DTOs, catálogos de error) con la herramienta generate_api_docs. Es determinista: el mismo código da los mismos archivos. Nunca se escribe a mano."
+  siempre:
+    - "Contrato por módulo: src/<modulo>/contracts/<modulo>.api.md (POST-only, application/vnd.api+json, sobres JSON:API, errores del catálogo, curl)."
+    - "Diagrama Mermaid sequenceDiagram por módulo: src/<modulo>/diagrams/<modulo>.flow.mmd (individual por módulo, nunca se fusionan)."
+    - "Índice: docs/api/README.md."
+  opt_in_el_agente_pregunta:
+    - "Colección de Postman v2.1: docs/api/middleware.postman_collection.json. UNA para todo el servicio, una carpeta por módulo; se fusiona sin tocar las demás carpetas."
+    - "docs/ARCHITECTURE.md con un diagrama Mermaid architecture-beta (11.1+; las líneas align requieren 11.16+)."
+  se_mantiene_al_dia: "add_use_case, generate_from_spec y record_architecture regeneran el contrato y el diagrama del módulo; Postman y ARCHITECTURE.md solo si ya existen (el usuario ya los pidió)."
+  verificador: "API_DOCS_MISSING y API_DOCS_STALE (WARN, no bloquean): falta el contrato/diagrama de un módulo, o el contrato no lista un endpoint del código."
+
+# ─── Complejidad (metadato clasificatorio, NO motor de sobre-ingeniería) ────
+# Documenta POR QUÉ un módulo tiene cierta forma. Empieza en 0 y sube solo ante
+# una señal concreta. Ante la duda entre dos niveles, elige el MENOR.
+complejidad:
+  niveles:
+    0: "CRUD simple: una capability (repository) sobre una fuente, sin branching."
+    1: "Fuente alterna (p.ej. API externa en vez de BD)."
+    2: "Multi-capability: combina varias fuentes/puertos en un caso."
+    3: "Branching: el comportamiento bifurca por un tipo/categoría de negocio."
+    4: "Escritura atómica: todo-o-nada dentro de un mismo motor."
+    5: "Composición de casos de uso."
+  regla: "Registra el nivel GANADO y la señal concreta del requerimiento que lo justificó."
+
+# ─── Inventario + auditoría (memoria por repo del MCP) ──────────────────────
+inventario:
+  archivo: "docs/architecture-inventory.json"
+  reglas:
+    - "Envelope con mcpVersion/generatedAt y una entrada POR MÓDULO (clave = nombre del módulo)."
+    - "Agregar o reemplazar SOLO la entrada del módulo en curso; NUNCA tocar las de otros módulos."
+    - "Al abrir una sesión futura, LEE este archivo ANTES de generar para no duplicar módulos ni releer todo el código."
+    - "generate_from_spec actualiza el inventario automáticamente al generar (dryRun=false)."
+  auditoria:
+    archivo: "docs/audits/<module>-<YYYY-MM-DD>.md"
+    contenido: "compliance (verify_standards), build/tests, casos de uso, reglas de negocio, complejidad, decisiones; encabezado con la versión del MCP."
+    herramienta: "record_architecture (lee el spec del módulo; acepta compliance/buildStatus/decisions)."
+
+# ─── Flujo esperado del agente (nuevo y refactor) ──────────────────────────
+flujo:
+  siempre_primero: "Leer estas reglas (get_rules) y el inventario (docs/architecture-inventory.json si existe) ANTES de generar o refactorizar."
+  punto_de_entrada: "install_agentic_kit deja en el repo los agentes middleware-generator (el único que se selecciona), middleware-gen-worker (Haiku, completa el andamiaje) y middleware-auditor (Opus, valida y deja la auditoría), la plantilla del spec y la sección de AGENTS.md (idempotente, versionado; los modelos se pueden sobrescribir con el parámetro models). El agente hace las preguntas, escribe agentic/specs/<modulo>/input/specs/middleware.spec.yaml y sigue el procedimiento de get_flow."
+  nuevo: "scaffold_service (base) -> generate_from_spec / add_use_case (casos) -> build -> verify_standards -> record_architecture (inventario + auditoría)."
+  bucle_de_correccion: "verify_standards devuelve reglas con ID estable (CORS_WILDCARD, MISSING_CORRELATION_ID, ...). Si hay errores bloqueantes, el agente los corrige y vuelve a verificar hasta quedar en verde. El resultado final NO depende de qué tan bueno sea el modelo: lo estándar sale de plantillas y lo que se desvíe lo atrapa el verificador."
+  todos: "Todo TODO que el MCP deje (reglas de negocio inferidas, columnas sin confirmar, valores faltantes) el agente DEBE avisarlo al usuario de forma explícita al terminar, listado archivo por archivo. Un TODO silencioso es un defecto."
+  refactor: "inspect_project (descubrir convención real) -> mapear casos -> add_use_case mode=refactor -> mover lógica real -> reusar infra existente -> build + verify_standards -> record_architecture."
+  regla_refactor: "Adáptate a la convención del proyecto destino; reusa su infra; no dupliques; no toques módulos ajenos."

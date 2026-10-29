@@ -1,0 +1,68 @@
+{
+  "name": "<servicio>",
+  "version": "0.0.1",
+  "description": "Microservicio NestJS hexagonal del área Middleware.",
+  "private": true,
+  "scripts": {
+    "build": "nest build",
+    "start": "nest start",
+    "start:dev": "nest start --watch",
+    "start:prod": "node dist/main",
+    "lint": "eslint \"{src,apps,libs,test}/**/*.ts\" --fix",
+    "lint:check": "eslint \"{src,apps,libs,test}/**/*.ts\"",
+    "format": "prettier --write \"src/**/*.ts\"",
+    "test": "jest --passWithNoTests",
+    "verify:standards": "node scripts/verify-standards.mjs",
+    "verify": "npm run lint:check && npm run verify:standards",
+    "prepare": "husky || true"
+  },
+  "lint-staged": {
+    "*.ts": ["eslint --fix", "prettier --write"]
+  },
+  "dependencies": {
+    "@nestjs/common": "^11",
+    "@nestjs/config": "^4",
+    "@nestjs/core": "^11",
+    "@nestjs/platform-express": "^11",
+    "@nestjs/typeorm": "^11",
+    "class-transformer": "^0.5",
+    "class-validator": "^0.14",
+    "helmet": "^8",
+    "joi": "^17",
+    "log4js": "^6",
+    "reflect-metadata": "^0.2",
+    "rxjs": "^7",
+    "typeorm": "^0.3"
+  },
+  "devDependencies": {
+    "@nestjs/cli": "^11",
+    "@nestjs/schematics": "^11",
+    "@nestjs/testing": "^11",
+    "@types/express": "^5",
+    "@types/jest": "^29",
+    "@types/node": "^20",
+    "@typescript-eslint/eslint-plugin": "^6",
+    "@typescript-eslint/parser": "^6",
+    "eslint": "^8",
+    "eslint-config-prettier": "^9",
+    "eslint-plugin-prettier": "^5",
+    "husky": "^9",
+    "jest": "^29",
+    "lint-staged": "^16",
+    "prettier": "^3",
+    "ts-jest": "^29",
+    "ts-loader": "^9",
+    "ts-node": "^10",
+    "tsconfig-paths": "^4",
+    "typescript": "^5"
+  },
+  "jest": {
+    "moduleFileExtensions": ["js", "json", "ts"],
+    "rootDir": "src",
+    "testRegex": ".*\\.spec\\.ts$",
+    "transform": { "^.+\\.(t|j)s$": "ts-jest" },
+    "collectCoverageFrom": ["**/*.(t|j)s"],
+    "coverageDirectory": "../coverage",
+    "testEnvironment": "node"
+  }
+}

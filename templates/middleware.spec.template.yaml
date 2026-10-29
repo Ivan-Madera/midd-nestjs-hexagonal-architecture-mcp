@@ -1,0 +1,83 @@
+# ═══════════════════════════════════════════════════════════════════════════
+# middleware.spec.yaml — PLANTILLA
+#
+# QUÉ ES: la descripción declarativa de UN módulo de middleware que quieres
+# generar/refactorizar. Captura el REQUERIMIENTO (qué entidad, qué operaciones,
+# qué reglas de negocio), NO la arquitectura. La arquitectura hexagonal vive en
+# rules.yaml y la aplica el MCP al generar (no la dupliques aquí).
+#
+# AGNÓSTICO DE DOMINIO: `module`, `entity` y `use_cases` los defines TÚ. El MCP
+# no hornea ningún dominio; con este spec arma el código con la calidad del área.
+#
+# Formato soportado: YAML. Lo consume la tool generate_from_spec (specPath).
+# ═══════════════════════════════════════════════════════════════════════════
+
+# ─── Identidad (la defines tú; sin valores por defecto amarrados) ──────────
+module: ""              # kebab-case, p.ej. "catalog" (carpeta: src/<module-lowercase>/)
+entity: ""              # PascalCase, p.ej. "Product" (entidad de dominio principal)
+description: ""         # una línea: para qué sirve el módulo (el requerimiento)
+
+# ─── Stack (único valor soportado por este MCP) ───────────────────────────
+stack: "nestjs"         # este MCP es exclusivamente NestJS + TypeORM/SP (mssql, postgres o mysql)
+
+# ─── Prefijo de códigos de error (MAYÚSCULAS) ──────────────────────────────
+error_prefix: ""        # p.ej. "CATALOG" -> códigos CATALOG-<SLUG>-<NNNN>
+
+# ─── Conexión TypeORM ──────────────────────────────────────────────────────
+connection:
+  name: ""              # PascalCase sin sufijo Connection, p.ej. "Catalog"
+  engine: ""            # OBLIGATORIO: mssql | postgres | mysql (preguntar al usuario, no asumir)
+  style: "named"        # named | default (default = conexión de forRoot sin nombre)
+
+# ─── Casos de uso ───────────────────────────────────────────────────────────
+# Un caso de uso = 1 puerto inbound (I<Caso>Service) + 1 puerto outbound
+# (I<Caso>Repository) + N MÉTODOS. Cada método declara su request y su response
+# como entidades de dominio tipadas (NUNCA `any` ni `string` genérico).
+use_cases: []
+  # - name: "RetrieveProduct"        # PascalCase; genera RetrieveProductController/Adapter/...
+  #   action: "retrieveProduct"      # ruta del endpoint POST (kebab/camel)
+  #   resource_type: "product"       # 'type' JSON:API (kebab-case)
+  #   adapter: "sp"                  # typeorm | sp   (sp requiere 'sp' por método o a nivel caso)
+  #   methods:
+  #     - name: "retrieveBySku"              # camelCase; método del puerto
+  #       request: "RetrieveProductRequest"  # entidad de dominio de entrada
+  #       response: "Product"                # entidad de dominio de salida
+  #       sp: "GetProductBySku"              # nombre del SP (solo si adapter=sp); se registra en config/joi/.env
+  #     - name: "retrieveByBarcode"
+  #       request: "RetrieveProductByBarcodeRequest"
+  #       response: "Product"
+  #       sp: "GetProductByBarcode"
+
+# ─── DTOs de frontera (lo que cruza el puerto HTTP) ────────────────────────
+# input: lo que el llamador envía (SIN id/created_at server-generados).
+# output: la proyección segura devuelta al llamador.
+dtos:
+  input: {}             # { sku: "string" }
+  output: {}            # { id: "number", sku: "string", nombre: "string" }
+
+# ─── Esquema de datos (fuente de verdad; el MCP NO inventa columnas) ───────
+data_source:
+  kind: "sp"            # sp | typeorm
+  table: ""             # tabla/SP real (o "" si no aplica)
+  schema_known: false   # true si pegaste el esquema real
+  schema: []            # columnas source-of-truth (marca TODO donde sea derivado)
+    # - { name: "id",  type: "number", nullable: false, note: "PK autoincrement" }
+    # - { name: "sku", type: "string", nullable: false, unique: true }
+
+# ─── Reglas de negocio (NO validación estructural) ─────────────────────────
+# Se materializan como guardas en el application service (GenericException +
+# error del catálogo). Si no hay, deja none: true.
+business_rules:
+  none: false
+  rules: []
+    # - "sku debe existir en el catálogo (404 si no se encuentra)"
+    # - "si productType == PHONE usa GetLockTypePhone; si == TV usa RetrieveLockTypeTvMacrolock"
+
+# ─── Complejidad (metadato; empieza en 0, sube solo con señal concreta) ────
+complexity:
+  level: 0
+  signals: []
+    # - { level: 3, why: "el comportamiento bifurca por productType" }
+
+# ─── Notas / preguntas abiertas para la generación ─────────────────────────
+notes: []
