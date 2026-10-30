@@ -21,12 +21,17 @@ description: ""         # una línea: para qué sirve el módulo (el requerimien
 stack: "nestjs"         # este MCP es exclusivamente NestJS + TypeORM/SP (mssql, postgres o mysql)
 
 # ─── Prefijo de códigos de error (MAYÚSCULAS) ──────────────────────────────
-error_prefix: ""        # p.ej. "CATALOG" -> códigos CATALOG-<SLUG>-<NNNN>
+error_prefix: ""        # p.ej. "CATALOG" -> errores CATALOG-<SLUG>-<NNN> (NNN de 001 a 999, lo asigna el MCP)
 
 # ─── Conexión TypeORM ──────────────────────────────────────────────────────
 connection:
-  name: ""              # PascalCase sin sufijo Connection, p.ej. "Catalog"
-  engine: ""            # OBLIGATORIO: mssql | postgres | mysql (preguntar al usuario, no asumir)
+  # name:               # OPCIONAL, no se pregunta: sin el, la conexion se llama como su motor (Mssql, Postgres, Mysql).
+  #                     # Solo para una conexion ADICIONAL del mismo motor (Mssql2) o una que el proyecto ya tiene.
+  engine: ""            # GREENFIELD: obligatorio, mssql | postgres | mysql (preguntar al usuario, no asumir),
+                        # o none si NO usa base de datos (no se genera ninguna conexion).
+                        # REFACTOR: omitelo (y name tambien): el proyecto ya tiene su conexion y se reutiliza.
+  # create: true        # SOLO refactor y SOLO si el usuario pidio expresamente una conexion que el proyecto no tiene
+                        # (requiere engine). Sin esto un refactor nunca crea una conexion.
   style: "named"        # named | default (default = conexión de forRoot sin nombre)
 
 # ─── Casos de uso ───────────────────────────────────────────────────────────
@@ -37,7 +42,9 @@ use_cases: []
   # - name: "RetrieveProduct"        # PascalCase; genera RetrieveProductController/Adapter/...
   #   action: "retrieveProduct"      # ruta del endpoint POST (kebab/camel)
   #   resource_type: "product"       # 'type' JSON:API (kebab-case)
-  #   adapter: "sp"                  # typeorm | sp   (sp requiere 'sp' por método o a nivel caso)
+  #   adapter: "sp"                  # typeorm | sp | http   (sp pide 'sp' por metodo; http pide 'api' en el caso y 'http' por metodo)
+  #   api: "ExchangeRates"           # SOLO adapter=http: PascalCase; su URL base va en EXCHANGE_RATES_BASE_URL (config, Joi y .env)
+  #   # por metodo, con adapter=http:  http: { method: GET, path: /rates }     (GET | POST | PUT)
   #   methods:
   #     - name: "retrieveBySku"              # camelCase; método del puerto
   #       request: "RetrieveProductRequest"  # entidad de dominio de entrada

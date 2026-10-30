@@ -1,6 +1,8 @@
 import { existsSync, readFileSync, readdirSync, writeFileSync } from 'node:fs'
 import { join } from 'node:path'
 import { materializeTree } from './dataset.js'
+import { addEnvEntries } from './envFile.js'
+import { inspectProject } from './inspect.js'
 import { addImport, appendToArray } from './moduleMerge.js'
 import {
   PROFILES,
@@ -153,11 +155,9 @@ function patchEnvExample(file: string, conexion: string, motor: Motor): PatchSta
     [env.name, 'MyDatabase']
   ]
   const content = read(file)
-  const missing = entries.filter(([key]) => !new RegExp(`^${key}=`, 'm').test(content))
-  if (missing.length === 0) return 'unchanged'
-  const separator = content === '' || content.endsWith('\n') ? '' : '\n'
-  const block = [`# --- Database connection '${conexion}' (${profile.label}) ---`, ...missing.map(([k, v]) => `${k}=${v}`)]
-  writeFileSync(file, `${content}${separator}${block.join('\n')}\n`, 'utf8')
+  const next = addEnvEntries(content, `Database connection '${conexion}' (${profile.label})`, entries)
+  if (next === content) return 'unchanged'
+  writeFileSync(file, next, 'utf8')
   return 'patched'
 }
 
@@ -261,4 +261,143 @@ export function ensureConnection(opts: { projectRoot: string; conexion: string; 
     patched,
     warnings
   }
+}
+
+// --- connection names ------------------------------------------------------------------------------
+//
+// The user is never asked how to call a connection: the name follows from the engine (Mssql, Postgres,
+// Mysql). An additional connection of an engine that already has one gets a number (Mssql2, Mssql3):
+// a hyphen suffix would not be valid in a class name or an environment variable.
+
+/** Name of the first connection of an engine: the engine itself in PascalCase. */
+export const defaultConnectionName = (motor: Motor): string => motor.charAt(0).toUpperCase() + motor.slice(1)
+
+/** First free name for a connection of this engine: Mssql, then Mssql2, Mssql3... */
+export function nextConnectionName(motor: Motor, taken: string[]): string {
+  const base = defaultConnectionName(motor)
+  if (!taken.includes(base)) return base
+  for (let n = 2; ; n++) if (!taken.includes(`${base}${n}`)) return `${base}${n}`
+}
+
+export type ConnectionChoice = { name: string; exists: boolean } | { error: string }
+
+/**
+ * Which connection a use case works with.
+ * - A name given explicitly is respected as is (the project may already use its own).
+ * - Without a name: the single connection of the engine is reused; none yet means a new one named after the
+ *   engine; several of that engine is ambiguous and the caller must say which one.
+ * Read only: it never creates anything, so a dry run and a re-run give the same answer.
+ */
+export function chooseConnection(opts: { projectRoot: string; conexion?: string; motor?: Motor }): ConnectionChoice {
+  const connections = listConnections(opts.projectRoot)
+  if (opts.conexion) return { name: opts.conexion, exists: connections.some((c) => c.name === opts.conexion) }
+  const list = (items: ConnectionInfo[]) => items.map((c) => `${c.name}${c.motor ? ` (${c.motor})` : ''}`).join(', ')
+  if (!opts.motor) {
+    if (connections.length === 1) return { name: connections[0].name, exists: true }
+    return {
+      error:
+        connections.length === 0
+          ? 'falta el motor de base de datos (mssql | postgres | mysql) para nombrar la conexion. Preguntaselo al usuario; no se asume.'
+          : `hay varias conexiones (${list(connections)}): indica cual con "conexion", o el motor.`
+    }
+  }
+  const sameEngine = connections.filter((c) => c.motor === opts.motor)
+  if (sameEngine.length === 1) return { name: sameEngine[0].name, exists: true }
+  if (sameEngine.length > 1) {
+    return {
+      error: `hay ${sameEngine.length} conexiones ${opts.motor} (${list(sameEngine)}): indica cual usar con "conexion".`
+    }
+  }
+  return { name: nextConnectionName(opts.motor, connections.map((c) => c.name)), exists: false }
+}
+
+/**
+ * REFACTOR: the project already has its connection, so it is found and reused, never asked and never created
+ * on its own. (A connection is created in a refactor only when the user explicitly asks: `crear` in
+ * chooseProjectConnection.)
+ * - `default` style (a plain TypeOrmModule.forRoot): the adapters inject no connection name.
+ * - `named` style: the project's own named connection (read from its code). Several of them is ambiguous.
+ */
+export function detectProjectConnection(opts: { projectRoot: string; style: 'named' | 'default' }): ConnectionChoice {
+  if (opts.style === 'default') return { name: 'Default', exists: true }
+  const found = inspectProject(opts.projectRoot).connection.namedConnections
+  if (found.length === 1) return { name: found[0], exists: true }
+  if (found.length === 0) {
+    return {
+      error:
+        'el proyecto no tiene una conexion TypeORM y en un refactor el MCP NO crea una por su cuenta. Si el usuario pide expresamente que se cree una, pregunta el motor (mssql | postgres | mysql) y vuelve a llamar con crearConexion=true y motor. Si el proyecto usa la conexion por defecto de forRoot, pasa connectionStyle="default".'
+    }
+  }
+  return { error: `el proyecto tiene varias conexiones nombradas (${found.join(', ')}): indica cual usa este caso con "conexion".` }
+}
+
+/**
+ * The connection a use case works with, by mode.
+ * - refactor: the one the project already has (detectProjectConnection).
+ * - greenfield: named after its engine (chooseConnection).
+ * A name passed by the caller only matters to tell several candidates apart (an additional connection such as
+ * Mssql2, or one of several the project has); nobody has to give the name of the only connection there is.
+ */
+export function chooseProjectConnection(opts: {
+  projectRoot: string
+  mode: 'greenfield' | 'refactor'
+  style: 'named' | 'default'
+  conexion?: string
+  motor?: Motor
+  /** Refactor only: the user EXPLICITLY asked for a connection to be created. Without it a refactor never creates one. */
+  crear?: boolean
+}): ConnectionChoice {
+  if (opts.style === 'default') return { name: opts.conexion ?? 'Default', exists: true }
+  if (opts.mode === 'refactor') {
+    if (opts.crear) {
+      if (!opts.motor) {
+        return { error: 'pediste crear una conexion en un refactor y falta el motor (mssql | postgres | mysql). Preguntaselo al usuario; no se asume.' }
+      }
+      // Same naming and reuse rules as a new service: the connection is named after its engine.
+      return chooseConnection({ projectRoot: opts.projectRoot, conexion: opts.conexion, motor: opts.motor })
+    }
+    const found = inspectProject(opts.projectRoot).connection.namedConnections
+    if (opts.conexion && (found.includes(opts.conexion) || found.length === 0)) {
+      // The caller names it when there are several candidates, or when the project defines its connection in a
+      // way the inspection cannot read (it is the project's own either way: it is never created).
+      return { name: opts.conexion, exists: true }
+    }
+    return detectProjectConnection({ projectRoot: opts.projectRoot, style: opts.style })
+  }
+  return chooseConnection({ projectRoot: opts.projectRoot, conexion: opts.conexion, motor: opts.motor })
+}
+
+/**
+ * Fills `connection.name` of a spec that does not name its connection. Returns an error message, or
+ * undefined when the name is set.
+ */
+export function fillSpecConnection(
+  spec: { connection: { name: string; style: 'named' | 'default'; engine?: Motor | 'none'; create?: boolean } },
+  projectRoot: string,
+  mode: 'greenfield' | 'refactor'
+): string | undefined {
+  if (spec.connection.name) return undefined
+  const choice = chooseProjectConnection({
+    projectRoot,
+    mode,
+    style: spec.connection.style,
+    motor: spec.connection.engine === 'none' ? undefined : spec.connection.engine,
+    crear: spec.connection.create
+  })
+  if ('error' in choice) return choice.error
+  spec.connection.name = choice.name
+  return undefined
+}
+
+/**
+ * Same as fillSpecConnection when the mode is not known (record_architecture runs after the generation): a
+ * connection the MCP created is found by the engine of the spec, otherwise it is the project's own (a refactor).
+ */
+export function fillSpecConnectionAnyMode(
+  spec: { connection: { name: string; style: 'named' | 'default'; engine?: Motor | 'none'; create?: boolean } },
+  projectRoot: string
+): string | undefined {
+  const engine = spec.connection.engine === 'none' ? undefined : spec.connection.engine
+  const created = engine ? listConnections(projectRoot).some((c) => c.motor === engine) : false
+  return fillSpecConnection(spec, projectRoot, created ? 'greenfield' : 'refactor')
 }

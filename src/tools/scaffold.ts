@@ -4,52 +4,79 @@ import { materializeTree, materializeFile, readTemplate } from '../lib/dataset.j
 import { buildPlaceholderMap } from '../lib/placeholders.js'
 import { buildEnvExample } from '../lib/env.js'
 import { learnConventions } from '../lib/learnings.js'
-import { ensureConnection, listConnections } from '../lib/connections.js'
-import { PROFILES, connectionEnv, isMotor, type Motor } from '../lib/engines.js'
+import { chooseConnection, ensureConnection, listConnections } from '../lib/connections.js'
+import { PROFILES, SIN_BASE_DE_DATOS, connectionEnv, isMotorChoice, type MotorChoice } from '../lib/engines.js'
 import * as s from '../lib/schemas.js'
 
 // ---------------------------------------------------------------------------
 // scaffold_service: base del servicio (shared + config + enforcement)
 // ---------------------------------------------------------------------------
+// Real values live in .env and never go to git; .env.example documents the keys.
+export const GITIGNORE = [
+  '# Dependencies and build output',
+  'node_modules/',
+  'dist/',
+  'coverage/',
+  '',
+  '# Environment: the real values (credentials, URLs) stay out of git. .env.example documents the keys.',
+  '.env',
+  '.env.*',
+  '!.env.example',
+  '',
+  '# Logs and system files',
+  '*.log',
+  '.DS_Store',
+  ''
+].join('\n')
+
 export const scaffoldServiceSchema = {
   projectRoot: s.projectRoot,
   conexion: s.conexion,
   motor: s.motor,
-  prefijoServicio: s.prefijoServicio,
+  prefijoApi: s.prefijoApi,
   prefijoError: s.prefijoError,
   overwrite: s.overwrite
 }
 
-export async function scaffoldService(args: {
+export async function scaffoldService(input: {
   projectRoot: string
-  conexion: string
-  motor: Motor
-  prefijoServicio: string
+  conexion?: string
+  motor: MotorChoice
+  prefijoApi: string
   prefijoError: string
   overwrite: boolean
 }) {
+  const args = { ...input, conexion: input.conexion ?? '' }
   // The engine is never assumed: it is asked. (The MCP schema already requires it; this guards direct calls.)
-  if (!isMotor(args.motor)) {
+  if (!isMotorChoice(args.motor)) {
     return {
-      content: [{ type: 'text' as const, text: 'ERROR: falta el motor de base de datos (mssql | postgres | mysql). Pregúntaselo al usuario; no se asume.' }],
+      content: [{ type: 'text' as const, text: 'ERROR: falta el motor de base de datos (mssql | postgres | mysql, o none si el servicio no usa base de datos). Pregúntaselo al usuario; no se asume.' }],
       isError: true
     }
   }
-
+  // "none": the service does not use a database, so NO connection is generated, whatever the engine.
+  const engine = args.motor === SIN_BASE_DE_DATOS ? undefined : args.motor
+  if (engine) {
+    // The connection is named after its engine unless the caller names it (an extra connection).
+    const choice = chooseConnection({ projectRoot: args.projectRoot, conexion: input.conexion, motor: engine })
+    if ('error' in choice) {
+      return { content: [{ type: 'text' as const, text: `ERROR: ${choice.error}` }], isError: true }
+    }
+    args.conexion = choice.name
+  }
   // Re-running scaffold on a project whose connection uses ANOTHER engine must not silently keep (or change) it.
-  const existing = listConnections(args.projectRoot).find((c) => c.name === args.conexion)
-  if (existing?.motor && existing.motor !== args.motor) {
+  const existing = engine ? listConnections(args.projectRoot).find((c) => c.name === args.conexion) : undefined
+  if (engine && existing?.motor && existing.motor !== engine) {
     return {
       content: [
         {
           type: 'text' as const,
-          text: `ERROR: la conexión "${args.conexion}" ya existe con el motor ${existing.motor} y pediste ${args.motor}. No se cambia el motor de una conexión existente: usa otro nombre de conexión o corrige el motor.`
+          text: `ERROR: la conexión "${args.conexion}" ya existe con el motor ${existing.motor} y pediste ${engine}. No se cambia el motor de una conexión existente: usa otro nombre de conexión o corrige el motor.`
         }
       ],
       isError: true
     }
   }
-
   const map = buildPlaceholderMap({
     dominio: 'Sample',
     caso: 'Sample',
@@ -61,7 +88,7 @@ export async function scaffoldService(args: {
     rutaDominio: 'sample',
     tipoRecurso: 'sample',
     conexion: args.conexion,
-    servicio: args.prefijoServicio
+    servicio: args.prefijoApi
   })
 
   // 1) Copiar la capa shared tal cual a src/shared/
@@ -112,7 +139,7 @@ export async function scaffoldService(args: {
     mkdirSync(args.projectRoot, { recursive: true })
     writeFileSync(
       envPath,
-      buildEnvExample(joiText, [], { API_CONTEXT: args.prefijoServicio }),
+      buildEnvExample(joiText, [], { API_CONTEXT: args.prefijoApi }),
       'utf8'
     )
     written.push('.env.example')
@@ -120,17 +147,28 @@ export async function scaffoldService(args: {
     skipped.push('.env.example')
   }
 
+  // A .gitignore that keeps the real values (.env) out of git. Never overwrites the one a project already has.
+  const gitignorePath = join(args.projectRoot, '.gitignore')
+  if (!existsSync(gitignorePath)) {
+    mkdirSync(args.projectRoot, { recursive: true })
+    writeFileSync(gitignorePath, GITIGNORE, 'utf8')
+    written.push('.gitignore')
+  } else {
+    skipped.push('.gitignore')
+  }
   // The primary connection goes through the same path as any later one: module, options, config,
   // Joi, .env.example, AppModule and the driver of its engine.
-  const connection = ensureConnection({ projectRoot: args.projectRoot, conexion: args.conexion, motor: args.motor })
+  const connection = engine
+    ? ensureConnection({ projectRoot: args.projectRoot, conexion: args.conexion, motor: engine })
+    : { written: [] as string[], patched: [] as string[], warnings: [] as string[] }
   written.push(...connection.written, ...connection.patched)
   const connectionWarnings = connection.warnings
 
   // Remembered for the next session of this repo (advisory; never affects what is generated).
   learnConventions(args.projectRoot, {
-    serviceContext: args.prefijoServicio,
+    serviceContext: args.prefijoApi,
     errorPrefix: args.prefijoError,
-    connection: { name: args.conexion, style: 'named' }
+    connection: engine ? { name: args.conexion, style: 'named' } : undefined
   })
 
   return {
@@ -146,11 +184,13 @@ export async function scaffoldService(args: {
           ...skipped.map((f) => `  = ${f}`),
           '',
           'Siguientes pasos:',
-          `  - Proyecto base listo (package.json, tsconfig, nest-cli). Base URL "/${args.prefijoServicio}/api/v{N}/{resource}" (API_CONTEXT=${args.prefijoServicio}); conexión "${args.conexion}" cableada en app.module.ts y el módulo de BD.`,
-          '  - Corre npm install.',
-          `  - Motor ${PROFILES[args.motor].label}: rellena ${connectionEnv(args.conexion).prefix}_HOST, _PORT, _USERNAME, _PASSWORD y _NAME en el .env.`,
+          `  - Proyecto base listo (package.json, tsconfig, nest-cli). Base URL "/${args.prefijoApi}/api/v{N}/{resource}" (API_CONTEXT=${args.prefijoApi})${engine ? `; conexión "${args.conexion}" cableada en app.module.ts y el módulo de BD.` : '.'}`,
+          '  - AGENTE (hazlo tú con shell, no se lo pidas al usuario): corre npm install.',
+          engine
+            ? `  - Motor ${PROFILES[engine].label}: AGENTE: pide al usuario los valores de ${connectionEnv(args.conexion).prefix}_HOST, _PORT, _USERNAME, _PASSWORD y _NAME y escríbelos tú en el .env (no le pidas que lo edite). No repitas la contraseña en tus respuestas.`
+            : '  - SIN base de datos (el usuario eligió none): no se generó ninguna conexión, módulo de BD, variable DB_* ni driver. Un caso de uso que consume una API externa (adapterType http) funciona sin base de datos; los de TypeORM o SP necesitan una conexión, que se crea al indicar el motor en add_use_case.',
           ...connectionWarnings.map((w) => `  ! ${w}`),
-          '  - Copia .env.example a .env y rellena los valores reales de BD/seguridad.',
+          '  - AGENTE: crea el .env a partir del .env.example con tus herramientas de archivos (sin pisar uno existente) y escribe los valores reales que te dé el usuario. Los de seguridad (CORS, RL_*) ya traen su valor por defecto: no los preguntes. El .gitignore generado ya excluye .env.',
           '  - Añade un caso de uso con add_use_case (registra el dominio en app.module.ts automáticamente).'
         ]
           .filter(Boolean)

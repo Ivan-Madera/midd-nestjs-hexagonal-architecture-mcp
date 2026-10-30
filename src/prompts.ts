@@ -47,16 +47,22 @@ PASO 0 — LEE LAS REGLAS: llama get_rules y apégate a ellas (estructura hexago
   errores, seguridad, complejidad). Son la fuente de verdad del estilo del área (destilado del canon).
 
 PASO 1 — Pide al usuario estas variables (en un solo bloque) y espera su respuesta:
-  Identidad del servicio:
-   - prefijoServicio (kebab-case, p.ej. "midd-catalog"): es el {context} (API_CONTEXT). Los endpoints quedan en
-     /<prefijoServicio>/api/v{N}/<recurso>; la versión vive en cada controller, NO en el prefijo global.
-   - conexion (PascalCase, p.ej. "Catalog"): nombre de la conexión TypeORM.
-   - motor: ¿qué motor de base de datos usa la API? mssql | postgres | mysql. SIEMPRE pregúntalo, no lo asumas:
+  Identidad de la API:
+   - prefijoApi: prefijo de la API en kebab-case. Por ejemplo, midd-catalog. Los endpoints quedarán como /<prefijo>/api/v1/{recurso}
+     (se guarda como API_CONTEXT). La versión vive en cada controller, NO en el prefijo global. Pregúntalo como "prefijo de la API".
+   - La conexión NO se pregunta: se llama como su motor (Mssql, Postgres, Mysql) y se reutiliza si ya existe. Solo una conexión ADICIONAL
+     de un motor que ya tiene una lleva número (Mssql2, Mssql3; inspect_project dice cuál toca) y solo si el usuario la pide.
+   - motor: ¿qué motor de base de datos usa la API? mssql | postgres | mysql, o NINGUNO si no usa base de datos (se pasa motor="none"):
+     entonces NO se genera ninguna conexión, ni módulo de BD, ni variables DB_*, ni driver. SIEMPRE pregúntalo, no lo asumas:
      de la respuesta depende el driver, la configuración de TypeORM y el dialecto de los stored procedures.
-   - prefijoError (MAYÚSCULAS, p.ej. "CATALOG"): prefijo de los códigos de error.
+   - prefijoError: prefijo de errores de la API en mayúsculas. Por ejemplo, CATALOG. Los errores quedarán como
+     CATALOG-PRODUCTNOTFOUND-001 (el número va de 001 a 999 y lo asigna el MCP en secuencia por prefijo).
   Base de datos (según el motor elegido):
    - DB_<CONEXION>_HOST, DB_<CONEXION>_PORT, DB_<CONEXION>_USERNAME, DB_<CONEXION>_PASSWORD, DB_<CONEXION>_NAME
      (p.ej. DB_CATALOG_HOST para la conexión "Catalog"). Una conexión adicional trae su propio juego de variables.
+  API externa (si un caso consume una API en vez de una base de datos; es lo habitual si el servicio no usa BD):
+   - Por cada API: su nombre (PascalCase, p.ej. "ExchangeRates"; su URL base va en EXCHANGE_RATES_BASE_URL) y, por cada método,
+     el verbo (GET | POST | PUT) y la ruta. Estos casos usan adapterType="http" y no necesitan conexión ni motor.
   Servidor y seguridad (OBLIGATORIA):
    - PORT
    - CORS_ALLOWED_ORIGINS (lista de orígenes separados por coma): por defecto vale "*" (cualquier origen, tolerado para
@@ -75,7 +81,7 @@ PASO 1 — Pide al usuario estas variables (en un solo bloque) y espera su respu
     servicio, la registra después de SecurityModule y agrega AUTHORIZATION_API_URL a Joi, config y .env.example.
 
 PASO 2 — Genera la base:
-  - Llama scaffold_service con projectRoot, conexion, motor, prefijoServicio, prefijoError.
+  - Llama scaffold_service con projectRoot, motor, prefijoApi, prefijoError (sin conexion: la nombra el motor).
     (Genera shared + config + main.ts + app.module.ts con la conexión ya cableada, y .env.example desde el joiSchema.)
   - Llama add_use_case con un caso de uso de ejemplo (el recurso da igual; sirve para que el servicio nazca completo).
     add_use_case registra el dominio en app.module.ts automáticamente (no hace falta editar a mano).
@@ -83,8 +89,9 @@ PASO 2 — Genera la base:
 PASO 3 — Prepara el proyecto:
   - Fusiona templates/config/package.snippet.json en el package.json del servicio (get_template para leerlo).
   - NO agregues axios ni uuid (están prohibidos): HTTP con fetch nativo (consumoHttp) y ids con randomUUID de node:crypto.
-  - Copia .env.example a .env y rellena con los valores REALES que dio el usuario en el PASO 1.
-  - Corre: npm install, luego npm run build.
+  - Crea TÚ el .env a partir de .env.example (sin pisar uno existente) con los valores REALES que dio el usuario en el PASO 1; nunca
+    le pidas al usuario que lo haga. No repitas contraseñas en tus respuestas. Antes comprueba que .gitignore ignora .env.
+  - Corre TÚ (shell): npm install, luego npm run build.
 
 PASO 4 — Valida conexión a BD POR ARRANQUE (lo más simple):
   - Arranca el servicio en segundo plano (p.ej. npm run start) y lee los logs unos segundos.
@@ -92,7 +99,7 @@ PASO 4 — Valida conexión a BD POR ARRANQUE (lo más simple):
     => Proceso vivo + bootstrap de Nest completo (sin error de conexión) = BD conectada OK.
     => Proceso caído o error de login/timeout a la base de datos = BD NO conectó: corrige host/credenciales en .env y reintenta.
   - No añadas scripts de ping ni drivers extra: el arranque es el validador.
-  - Confirma que el HTTP quedó arriba con el health que trae el servicio: POST /<prefijoServicio>/api/v1/health con la
+  - Confirma que el HTTP quedó arriba con el health que trae el servicio: POST /<prefijoApi>/api/v1/health con la
     cabecera Content-Type: application/vnd.api+json. Debe responder 200 con status UP. Sigue siendo público aunque
     actives la autorización (add_authorization lo marca con @SkipAuthorization).
 

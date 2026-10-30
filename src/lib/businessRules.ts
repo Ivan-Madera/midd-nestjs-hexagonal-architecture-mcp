@@ -14,6 +14,7 @@
  */
 import { existsSync, readFileSync, writeFileSync } from 'node:fs'
 import { join } from 'node:path'
+import { formatErrorNumber, nextErrorNumbers } from './errorCodes.js'
 
 const read = (p: string) => (existsSync(p) ? readFileSync(p, 'utf8') : '')
 
@@ -49,7 +50,7 @@ function slugFromRule(rule: string, i: number): string {
     .join('')
     .toUpperCase()
   const base = words || 'BUSINESSRULE'
-  return `${base}_${String(i + 1).padStart(4, '0')}`
+  return `${base}_${String(i + 1).padStart(3, '0')}`
 }
 
 /** Intenta extraer el nombre de un campo mencionado en la regla (heurístico). */
@@ -73,10 +74,10 @@ function enumValues(rule: string): string[] {
 }
 
 /** Genera una guarda a partir del texto de una regla. */
-export function buildGuard(rule: string, index: number, errorPrefix: string): GeneratedGuard {
+export function buildGuard(rule: string, index: number, errorPrefix: string, number: number = index + 1): GeneratedGuard {
   const n = norm(rule)
   const slug = slugFromRule(rule, index)
-  const code = `${errorPrefix}-${slug.replace(/_\d+$/, '')}-${String(index + 1).padStart(4, '0')}`
+  const code = `${errorPrefix}-${slug.replace(/_\d+$/, '')}-${formatErrorNumber(number)}`
   const field = fieldFromRule(rule)
   const errObj = (status: number, title: string) =>
     `{ code: '${code}', title: '${title}', status: ${status}, suggestedActions: 'Revisa el valor enviado.' }`
@@ -236,7 +237,9 @@ export function applyBusinessRules(opts: {
     return { patched, warnings, generated: 0, inferred: 0 } // ya aplicadas
   }
 
-  const guards = rules.map((r, i) => buildGuard(r, i, errorPrefix))
+  // Each guard takes the next free number of the prefix, so it never repeats a code of another case.
+  const numbers = nextErrorNumbers(projectRoot, errorPrefix, rules.length)
+  const guards = rules.map((r, i) => buildGuard(r, i, errorPrefix, numbers[i]))
   inferred = guards.filter((g) => g.inferred).length
 
   const block =

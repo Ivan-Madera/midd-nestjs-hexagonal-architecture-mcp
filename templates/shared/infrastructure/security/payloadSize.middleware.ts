@@ -33,7 +33,7 @@ export function createPayloadSizeMiddleware(limits: PayloadLimits) {
     res.status(status).json(
       new ErrorResponse(
         {
-          code: 'SERVICE-PAYLOADTOOLARGE-0019',
+          code: 'SERVICE-PAYLOADTOOLARGE-019',
           status,
           source: { pointer: req.originalUrl },
           suggestedActions: `Send a body smaller than ${limit} bytes.`,

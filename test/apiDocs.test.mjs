@@ -16,7 +16,7 @@ const read = (root, file) => readFileSync(join(root, file), 'utf8')
 
 async function service({ authorization = false } = {}) {
   const projectRoot = mkdtempSync(join(tmpdir(), 'midd-docs-'))
-  await scaffoldService({ projectRoot, conexion: 'Catalog', motor: 'postgres', prefijoServicio: 'midd-catalog', prefijoError: 'CATALOG', overwrite: true })
+  await scaffoldService({ projectRoot, conexion: 'Catalog', motor: 'postgres', prefijoApi: 'midd-catalog', prefijoError: 'CATALOG', overwrite: true })
   if (authorization) await addAuthorization({ projectRoot, authorizationApiUrl: 'http://127.0.0.1:1/authorization/v1', overwrite: false })
   return projectRoot
 }

@@ -9,8 +9,12 @@ import {
 } from '../lib/moduleMerge.js'
 import { learnConventions } from '../lib/learnings.js'
 import { refreshApiDocs } from '../lib/apiDocs.js'
-import { ensureConnection, listConnections } from '../lib/connections.js'
-import { PROFILES, type Motor } from '../lib/engines.js'
+import { chooseProjectConnection, ensureConnection, listConnections } from '../lib/connections.js'
+import { isApiPath, isHttpVerb, usesDatabase, type AdapterType } from '../lib/adapters.js'
+import { wireExternalApi } from '../lib/httpWiring.js'
+import { nextErrorNumbers } from '../lib/errorCodes.js'
+import { ensureCaseErrors } from '../lib/caseErrors.js'
+import { PROFILES, SIN_BASE_DE_DATOS, type MotorChoice } from '../lib/engines.js'
 import * as s from '../lib/schemas.js'
 
 export const addUseCaseSchema = {
@@ -25,7 +29,11 @@ export const addUseCaseSchema = {
   prefijoError: s.prefijoError,
   conexion: s.conexion,
   motor: s.motorOpcional,
+  crearConexion: s.crearConexion,
   adapterType: s.adapterType,
+  apiExterna: s.apiExterna,
+  rutaApi: s.rutaApi,
+  metodoHttp: s.metodoHttp,
   nombreSp: s.nombreSp,
   envVarSp: s.envVarSp,
   mode: s.mode,
@@ -35,7 +43,7 @@ export const addUseCaseSchema = {
   overwrite: s.overwrite
 }
 
-export async function addUseCase(args: {
+export async function addUseCase(input: {
   projectRoot: string
   dominio: string
   caso: string
@@ -45,9 +53,13 @@ export async function addUseCase(args: {
   request?: string
   accion: string
   prefijoError: string
-  conexion: string
-  motor?: Motor
-  adapterType: 'typeorm' | 'sp'
+  conexion?: string
+  motor?: MotorChoice
+  crearConexion?: boolean
+  adapterType: AdapterType
+  apiExterna?: string
+  rutaApi?: string
+  metodoHttp?: string
   nombreSp?: string
   envVarSp?: string
   mode: 'greenfield' | 'refactor'
@@ -56,6 +68,7 @@ export async function addUseCase(args: {
   infraRoot?: string
   overwrite: boolean
 }) {
+  const args = { ...input, conexion: input.conexion ?? '' }
   // Guardarraíl: SP es opt-in explícito y requiere nombre.
   if (args.adapterType === 'sp' && !args.nombreSp) {
     return {
@@ -69,27 +82,77 @@ export async function addUseCase(args: {
     }
   }
 
+  // An external API needs its name and the path to call; the verb defaults to GET.
+  if (args.adapterType === 'http') {
+    const problems: string[] = []
+    if (!args.apiExterna) problems.push('falta apiExterna (nombre PascalCase de la API externa, p.ej. "ExchangeRates")')
+    if (!isApiPath(args.rutaApi)) problems.push('rutaApi es obligatoria y empieza con "/" (p.ej. "/rates"; sin espacios ni query string)')
+    if (args.metodoHttp && !isHttpVerb(args.metodoHttp)) problems.push('metodoHttp debe ser GET, POST o PUT')
+    if (problems.length) {
+      return { content: [{ type: 'text' as const, text: `ERROR: adapterType="http": ${problems.join('; ')}.` }], isError: true }
+    }
+  }
+  // Only the TypeORM and stored procedure adapters read a database, so only they need a connection.
+  const needsConnection = usesDatabase(args.adapterType)
+  // "none" = the service has no database: no connection exists, so the TypeORM and stored procedure adapters
+  // have nothing to work on. (In a refactor the engine only matters to create a connection the user asked for.)
+  const engine = args.motor === SIN_BASE_DE_DATOS ? undefined : args.motor
+  if (needsConnection && args.motor === SIN_BASE_DE_DATOS && args.mode === 'greenfield' && args.connectionStyle === 'named') {
+    return {
+      content: [
+        {
+          type: 'text' as const,
+          text: 'ERROR: el servicio se definio SIN base de datos (motor none): no hay conexion y los adapters TypeORM y SP la necesitan. Para consumir una API externa usa adapterType=http (no necesita conexion). Si ahora el servicio SI usa una base de datos, pregunta el motor (mssql | postgres | mysql) y vuelve a llamar con el.'
+        }
+      ],
+      isError: true
+    }
+  }
+  // Greenfield: the connection is named after its engine unless the caller names it (an extra connection).
+  // Refactor: the project's own connection is found and reused. It is created ONLY when the user explicitly asked for
+  // one (the caller then passes both the name and the engine); otherwise a project without a connection is an error.
+  const choice = !needsConnection ? { name: 'Default', exists: true } : chooseProjectConnection({
+    projectRoot: args.projectRoot,
+    mode: args.mode,
+    style: args.connectionStyle,
+    conexion: input.conexion,
+    motor: engine,
+    crear: args.crearConexion
+  })
+  if ('error' in choice) {
+    return { content: [{ type: 'text' as const, text: `ERROR: ${choice.error}` }], isError: true }
+  }
+  args.conexion = choice.name
   // A NEW named connection is created complete (module, options, config, Joi, .env.example, AppModule, driver).
-  // Nothing is assumed about its engine: the user is asked. Not in refactor: the project owns its connections.
+  // Nothing is assumed about its engine: the user is asked.
   const connectionNotes: string[] = []
-  if (args.mode === 'greenfield' && args.connectionStyle === 'named') {
+  if (needsConnection && args.connectionStyle === 'named' && (args.mode === 'greenfield' || !choice.exists)) {
     const existing = listConnections(args.projectRoot).find((c) => c.name === args.conexion)
     const fail = (text: string) => ({ content: [{ type: 'text' as const, text: `ERROR: ${text}` }], isError: true })
-    if (!existing && !args.motor) {
+    if (!existing && !engine) {
       return fail(`la conexión "${args.conexion}" no existe todavía y falta el motor (mssql | postgres | mysql). Pregúntaselo al usuario; no se asume.`)
     }
-    if (existing?.motor && args.motor && existing.motor !== args.motor) {
-      return fail(`la conexión "${args.conexion}" ya existe con el motor ${existing.motor} y pediste ${args.motor}. No se cambia el motor de una conexión existente: usa otro nombre de conexión o corrige el motor.`)
+    if (existing?.motor && engine && existing.motor !== engine) {
+      return fail(`la conexión "${args.conexion}" ya existe con el motor ${existing.motor} y pediste ${engine}. No se cambia el motor de una conexión existente: usa otro nombre de conexión o corrige el motor.`)
     }
-    if (!existing && args.motor) {
-      const connection = ensureConnection({ projectRoot: args.projectRoot, conexion: args.conexion, motor: args.motor })
+    if (!existing && engine) {
+      const connection = ensureConnection({ projectRoot: args.projectRoot, conexion: args.conexion, motor: engine })
       connectionNotes.push(
-        `Conexión nueva "${args.conexion}" (${PROFILES[args.motor].label}) creada completa: ${[...connection.written, ...connection.patched].join(', ')}. Rellena sus variables DB_* en el .env.`
+        `Conexión nueva "${args.conexion}" (${PROFILES[engine].label}) creada completa: ${[...connection.written, ...connection.patched].join(', ')}. AGENTE: pide al usuario los valores de sus variables DB_* y escríbelos tú en el .env (sin repetir la contraseña).`
       )
+      if (args.mode === 'refactor') {
+        connectionNotes.push('REFACTOR: la conexión se creó porque el usuario la pidió expresamente. Revisa app.module.ts del proyecto: el MCP intenta registrarla, pero ese archivo es del proyecto.')
+      }
       connectionNotes.push(...connection.warnings.map((w) => `AVISO: ${w}`))
     }
   }
-
+  // The two errors of the case (application and domain catalog) take the next free numbers of the prefix.
+  let errorNumbers: number[]
+  try {
+    errorNumbers = nextErrorNumbers(args.projectRoot, args.prefijoError, 2)
+  } catch (err: any) {
+    return { content: [{ type: 'text' as const, text: `ERROR: ${err.message}` }], isError: true }
+  }
   const map = buildPlaceholderMap({
     dominio: args.dominio,
     caso: args.caso,
@@ -99,12 +162,17 @@ export async function addUseCase(args: {
     request: args.request,
     accion: args.accion,
     prefijoError: args.prefijoError,
+    errorNumApp: errorNumbers[0],
+    errorNumDom: errorNumbers[1],
     rutaDominio: args.dominio.toLowerCase(),
     tipoRecurso: args.entidad.toLowerCase(),
     conexion: args.conexion,
     nombreSp: args.nombreSp,
     envVarSp: args.envVarSp,
-    connectionStyle: args.connectionStyle,
+    apiExterna: args.apiExterna,
+    rutaApi: args.rutaApi,
+    metodoHttp: args.metodoHttp,
+    connectionStyle: needsConnection ? args.connectionStyle : 'default',
     infraStyle: args.infraStyle,
     infraRoot: args.infraRoot
   })
@@ -115,15 +183,19 @@ export async function addUseCase(args: {
   const destRoot = join(args.projectRoot, 'src', args.dominio.toLowerCase())
 
   // Excluir el adapter que NO corresponde al adapterType elegido.
-  const adapterToExclude =
-    args.adapterType === 'typeorm' ? '.sp.adapter' : '.typeorm.adapter'
+  const adaptersToExclude =
+    args.adapterType === 'typeorm'
+      ? ['.sp.adapter', '.http.adapter']
+      : args.adapterType === 'sp'
+        ? ['.typeorm.adapter', '.http.adapter']
+        : ['.typeorm.adapter', '.sp.adapter', 'sql-database'] // an external API has no TypeORM entity
 
   const result = materializeTree({
     subdir: '_domain-slice',
     destRoot,
     map,
     overwrite: args.overwrite,
-    exclude: [adapterToExclude]
+    exclude: adaptersToExclude
   })
 
   // Si el dominio YA existía, los módulos del dominio se omitieron (single-caso
@@ -142,7 +214,7 @@ export async function addUseCase(args: {
     const casoUpper = map['__CASO__']
     const adapterClass = `${args.caso}Adapter`
     const adapterFile =
-      args.adapterType === 'sp' ? `${casoCamel}.sp.adapter` : `${casoCamel}.typeorm.adapter`
+      `${casoCamel}.${args.adapterType}.adapter`
     const names: CaseNames = {
       caso: args.caso,
       casoCamel,
@@ -162,6 +234,21 @@ export async function addUseCase(args: {
     )
     for (const f of merge.patched) mergeNotas.push(`Actualizado: ${f}`)
     for (const w of merge.warnings) mergeNotas.push(`AVISO: ${w}`)
+    // The catalogs of the domain already exist (the first case made them): this case adds its own entries,
+    // each with the next free number of the prefix. Without them its key would not exist and it would not compile.
+    try {
+      const errors = ensureCaseErrors({
+        projectRoot: args.projectRoot,
+        dominio: args.dominio,
+        prefix: args.prefijoError,
+        errorKey: map['__ERROR_KEY__'],
+        slug: map['<SLUG>']
+      })
+      for (const f of errors.patched) mergeNotas.push(`Errores del caso agregados a ${f}`)
+      for (const w of errors.warnings) mergeNotas.push(`AVISO: ${w}`)
+    } catch (err: any) {
+      mergeNotas.push(`AVISO: ${err.message}`)
+    }
   }
 
   // Si se eligió typeorm, el adapter queda como <caso>.typeorm.adapter.ts; si sp,
@@ -186,7 +273,23 @@ export async function addUseCase(args: {
     )
     for (const f of wiring.patched) notas.push(`Ajustado: ${f}`)
     for (const w of wiring.warnings) notas.push(`AVISO: ${w}`)
-    notas.push('Rellena el valor real del SP en el .env del servicio.')
+    notas.push('AGENTE: pide al usuario el nombre real del SP y escríbelo tú en el .env.')
+  }
+  // An external API: the domain modules point to the http adapter and its base URL is declared (config, Joi, .env.example).
+  if (args.adapterType === 'http' && args.apiExterna) {
+    const wiring = wireExternalApi({
+      projectRoot: args.projectRoot,
+      dominio: args.dominio,
+      casoCamel: map['__caso__'],
+      api: args.apiExterna,
+      errorPrefix: args.prefijoError,
+      entidad: args.entidad,
+      patchModules: !dominioYaExistia
+    })
+    notas.push(`API externa "${args.apiExterna}" cableada: la URL base va en ${map['__ENV_VAR_API__']} (config, joiSchema y .env.example); los modulos apuntan al .http.adapter. AGENTE: pide al usuario esa URL y escríbela tú en el .env.`)
+    for (const f of wiring.patched) notas.push(`Ajustado: ${f}`)
+    for (const w of wiring.warnings) notas.push(`AVISO: ${w}`)
+    notas.push('Revisa el mapeo de la respuesta de la API a la entidad de dominio, y las credenciales si la API las exige (TODO en el adapter).')
   }
   // Registra el dominio en app.module.ts (idempotente). SOLO greenfield: en
   // refactor, el app.module del proyecto es ajeno y lo ajusta el agente.
@@ -225,7 +328,7 @@ export async function addUseCase(args: {
   // deliberately NOT learned, because a stored procedure is opt-in and must always be asked.
   learnConventions(args.projectRoot, {
     errorPrefix: args.prefijoError,
-    connection: { name: args.conexion, style: args.connectionStyle }
+    connection: needsConnection ? { name: args.conexion, style: args.connectionStyle } : undefined
   })
 
   return {

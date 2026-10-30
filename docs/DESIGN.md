@@ -18,7 +18,7 @@ el verificador, que devuelve reglas con ID estable para que el agente corrija en
 |---|---|---|
 | Estructura de carpetas | `core/domain/ports/inbound\|outbound`, `core/application`, `infrastructure/adapters`, `http-server` | Canon (`midd-pf-enrollment`) |
 | Excepciones | `GenericException` en core, `CustomHttpException` en controller | Canon |
-| Formato de código de error | `PREFIJO-SLUG-NNNN` (p.ej. `ENROLLMENT-LOCKTYPENOTFOUND-0011`) | Canon |
+| Formato de código de error | `PREFIJO-SLUG-NNN`, NNN de 001 a 999 (p.ej. `ENROLLMENT-LOCKTYPENOTFOUND-011`) | Canon, con número de 3 dígitos |
 | JSON:API | Se mantiene el canon: `try/catch` por controller con `ResponseJsonApiBase`/`CustomHttpException` (no `@JsonApiBody`) | Canon |
 | Acceso a datos | TypeORM por defecto, Stored Procedure opt-in (mssql, postgres o mysql), cliente HTTP externo | Ambos |
 | Idioma del código | Inglés (identificadores, comentarios, mensajes de plantillas nuevas) | Acordado |
@@ -138,8 +138,8 @@ exactamente los valores de su `.env.example` (si faltara una variable obligatori
   compilación, los tests unitarios del servicio y el verificador, no por una conexión viva.
 - **Defecto real que encontró:** un cuerpo mayor al límite enviado por partes (sin `Content-Length`) lo rechazaba el parser de
   Express con 413, pero con el cuerpo `PF-ERROR-GENERIC` / "Internal Server Error", porque el filtro global no reconocía errores
-  del parser. Igual un JSON malformado (400). Ahora ambos responden con el sobre del área (`SERVICE-PAYLOADTOOLARGE-0019`,
-  `SERVICE-BADREQUEST-0016`) y `meta.correlationId`.
+  del parser. Igual un JSON malformado (400). Ahora ambos responden con el sobre del área (`SERVICE-PAYLOADTOOLARGE-019`,
+  `SERVICE-BADREQUEST-016`) y `meta.correlationId`.
 
 **Multi-motor de base de datos (mssql, postgres, mysql).** El agente pregunta el motor cuando la API es nueva y de la
 respuesta salen el driver, las opciones de TypeORM (módulo `<motor>.database.<conexion>.module.ts` y archivo de opciones)
@@ -148,6 +148,56 @@ obligatorio y nunca se asume: `motor` en `scaffold_service`, `connection.engine`
 cuando la conexión es nueva. Un motor distinto al de una conexión existente se rechaza; el modo refactor nunca crea
 conexiones. Variables por conexión: `DB_<CONEXION>_HOST/PORT/USERNAME/PASSWORD/NAME` (se aparta del canon
 `MSSQL_DATABASE_*`/`DATABASE_NAME` para poder tener varias conexiones; pendiente de confirmar con el equipo).
+- **El nombre de la conexión no se pregunta.** Sale del motor: `Mssql`, `Postgres`, `Mysql` (variables `DB_MSSQL_*`). Si el motor ya
+  tiene una sola conexión, se reutiliza; si no hay, se crea; si hay varias del mismo motor y no se dice cuál, se rechaza con la lista.
+  Una conexión ADICIONAL del mismo motor se numera (`Mssql2`, `Mssql3`): un sufijo con guion no sirve en nombres de clase ni de
+  variable. Solo la crea el usuario al pedirla; el agente escribe ese nombre en `connection.name` del spec (inspect_project lo indica).
+  `conexion` solo se pasa para una conexión adicional. **Refactor:** el proyecto ya tiene su conexión, así que se detecta y se
+  reutiliza (`inspect_project`: una nombrada, o la `forRoot` por defecto); nunca se pregunta su nombre ni su motor y nunca se crea
+  nada (ni módulo, ni variables). Solo si el proyecto tiene varias nombradas se debe indicar cuál usa el caso.
+- **"Sin base de datos".** Si en una API nueva el usuario responde que no usa base de datos (`motor: none`), no se genera ninguna
+  conexión: ni módulo de BD, ni variables `DB_*`, ni driver. El servicio compila y arranca (lo prueba el e2e con el `main.ts` real). Los adapters
+  TypeORM y SP se rechazan hasta que se indique un motor; hoy no hay otro tipo de adapter, así que un servicio sin base de datos es solo
+  la base hasta que exista uno (por ejemplo, de API externa).
+- **Adapter de API externa (`adapter: http`).** Es lo habitual cuando el servicio no usa base de datos. El caso consume una API con el
+  fetch nativo (`consumoHttp`, sin axios) y no necesita conexión ni motor; si todos los casos del spec son de API externa, ni siquiera se
+  pregunta el motor. En el spec: `api` (PascalCase) a nivel de caso y `http: { method, path }` por método. La URL base vive en
+  `<API>_BASE_URL` (por ejemplo `EXCHANGE_RATES_BASE_URL`): `ConfigurationVariables.externalApis`, Joi `.uri().required()` (sin ella el
+  servicio no arranca) y la sección `External APIs` del `.env.example`; la comparten todos los casos contra la misma API. GET envía la
+  request como query string y POST/PUT como cuerpo JSON. Un 404 de la API es `null` (el application service decide); no alcanzarla, un
+  timeout o cualquier otro error HTTP lanza `EXTERNAL_API_ERROR` del catálogo del dominio (502, código `<PREFIJO>-EXTERNALAPI-<NNN>`).
+  El e2e levanta una API falsa real y comprueba 200, 404, 502, API caída y que el `x-correlation-id` viaje a la API.
+- **Límites del adapter http:** sin autenticación generada (queda un TODO en el adapter y el agente lo avisa; las credenciales deben salir de
+  `ConfigurationVariables`), sin parámetros dentro de la ruta (`/items/{id}`): los datos van por query string o cuerpo, y la respuesta se mapea
+  como un solo objeto (si la API devuelve otra forma hay que ajustar el mapeo).
+- **Defecto corregido de paso:** si el primer caso de un dominio no usaba TypeORM (SP o API externa), su cableado quitaba el import de
+  `TypeOrmModule`; un caso TypeORM posterior lo usaba sin importarlo y el servicio no compilaba. El merge ahora lo vuelve a importar.
+- **Códigos de error de 3 dígitos, en secuencia.** El formato es `<PREFIJO>-<SLUG>-<NNN>` con NNN de 001 a 999. Antes el canon y el MCP usaban
+  4 dígitos y cada caso nacía con `0001`, sin secuencia: dos casos con la misma entidad repetían código. Ahora cada error que crea el MCP
+  (el de aplicación y el de dominio de un caso, los de reglas de negocio y el de API externa) toma el siguiente número libre del prefijo,
+  leído del propio código (comentarios incluidos), sin contador aparte. Se migraron los códigos de la capa compartida (`SERVICE-...-013` a `021`).
+  Un caso nuevo en un dominio que ya existe agrega sus entradas a los catálogos; antes quedaban sin la llave y el servicio no compilaba.
+  El verificador falla con `ERROR_CODE_DUPLICATE` y avisa con `ERROR_CODE_FORMAT`. Si un prefijo agota el 999, el MCP lo dice y pide otro prefijo.
+  Los servicios generados antes conservan sus códigos de 4 dígitos; cuentan por su valor para no chocar con los nuevos.
+- **Instalación automática del kit de agentes.** Un servidor MCP se configura una vez para todo el usuario, así que al arrancar no sabe qué repo
+  está abierto; lo sabe cuando una herramienta recibe `projectRoot`. Ahí (`scaffold_service`, `add_use_case`, `generate_from_spec`,
+  `add_authorization`, `inspect_project`) se revisa el kit y, si falta, se instala antes de ejecutar la herramienta. La revisión va primero: si ya
+  está a la versión actual no se escribe nada; un agente ajeno con el mismo nombre no se reemplaza ni se mezcla (no se instala medio kit); y al
+  actualizar se conservan los modelos que el equipo puso en los agentes. Una carpeta inexistente solo se crea con `scaffold_service`. Se
+  desactiva con `MIDD_NESTJS_AUTO_KIT=off`. La respuesta de la herramienta agrega un aviso para el usuario y para el agente. Las herramientas que
+  solo leen o verifican nunca instalan.
+- **Lo que un MCP no puede hacer, y lo que no verifiqué.** Cambiar el agente del chat: en Kiro IDE se elige en el selector de la barra del chat
+  (hay un agente preferido que persiste, según el changelog 1.0) y no encontré un archivo documentado que lo fije por código. Tampoco pude
+  confirmar que los agentes instalados aparezcan en el selector: la documentación de Kiro dice que los perfiles con `allowedTools` o
+  `toolsSettings` sin bloque `permissions` se omiten en CLI V3 hasta migrarlos con `/upgrade-agent`, y que en el IDE los perfiles existentes siguen
+  funcionando. Los agentes del kit usan esos campos (heredados del kit de la librería). Si tras la instalación `middleware-generator` no
+  aparece en el selector, el primer sospechoso es ese formato.
+- **El entorno lo prepara el agente.** Las notas de las herramientas están dirigidas al agente ("AGENTE: ..."): corre `npm install`, crea el `.env`
+  a partir del `.env.example` con los valores que le da el usuario y no repite contraseñas. El MCP genera un `.gitignore` (nunca pisa el del proyecto)
+  y `ENV_NOT_IGNORED` falla si existe un `.env` que git no ignora.
+- **Refactor sin conexión.** Si el proyecto no tiene ninguna, el MCP no la genera. Solo si el usuario la pide expresamente
+  (`crearConexion=true`, o `connection.create: true` en el spec) se pregunta el motor y se crea completa, nombrada por el motor; pasar
+  solo el motor no basta, para que un reflejo del agente no cree nada. El caso se avisa en el reporte porque el `app.module` es del proyecto.
 - **Tres huecos cerrados.** (1) Una segunda conexión nombrada se crea completa (módulo, opciones, variables, Joi,
   `.env.example`, registro en `app.module`); antes solo se referenciaba y el servicio no arrancaba. (2) Las entidades se
   cargan con `autoLoadEntities: true` en lugar de `entities: []`. (3) El adapter SP inyecta el servicio de SU conexión;

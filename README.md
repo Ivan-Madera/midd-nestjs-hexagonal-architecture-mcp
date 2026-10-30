@@ -1,11 +1,9 @@
 # midd-nestjs-hexagonal-architecture-mcp
 
-> **Estado: híbrido en construcción.** Nace de combinar `midd-hexagonal-nestjs-mcp` (generador determinista)
-> con las guidelines, el flujo agéntico y el escáner de `lib-midd-mcp-architecture`. Las decisiones, el porqué de
-> cada regla, lo que ya se verificó y lo que falta están en [`docs/DESIGN.md`](docs/DESIGN.md). Donde este README
-> (heredado) contradiga a `DESIGN.md` o a `templates/rules.yaml` v2, mandan estos dos: en particular la ruta
-> `/{context}/api/v{N}/{resource}`, CORS sin `*`, y los tres controles de rate limit más correlation-id, ahora obligatorios.
-
+> **Estado: híbrido en uso.** Combina `midd-hexagonal-nestjs-mcp` (generador determinista) con las guidelines, el flujo agéntico y el escáner de
+> `lib-midd-mcp-architecture`. Las decisiones, el porqué de cada regla, lo que ya se verificó y lo que falta están en [`docs/DESIGN.md`](docs/DESIGN.md).
+> Donde este README contradiga a `DESIGN.md` o a `templates/rules.yaml`, mandan esos dos. En particular: la ruta `/{prefijo}/api/v{N}/{recurso}`,
+> CORS con `*` por defecto y restringible por `CORS_ALLOWED_ORIGINS`, y los tres controles de rate limit más el correlation ID, que son obligatorios.
 ![type](https://img.shields.io/badge/type-MCP%20Server-blue)
 ![stack](https://img.shields.io/badge/stack-Node.js%20%2B%20TypeScript-3178c6)
 ![protocol](https://img.shields.io/badge/protocol-Model%20Context%20Protocol-6E56CF)
@@ -66,34 +64,52 @@ El MCP es un proceso Node (ESM) que registra herramientas y prompts contra el `M
 
 ```
 src/
-├── index.ts                 # servidor MCP: registra 15 tools + 3 prompts (stdio)
+├── index.ts                 # servidor MCP: registra 15 tools + 3 prompts (stdio); envuelve con withKit las que trabajan sobre un repo
 ├── prompts.ts               # flujos guía: start, scaffold_greenfield, refactor_to_hexagonal
 ├── lib/
 │   ├── dataset.ts           # localiza/lee plantillas y materializa árboles en el destino
 │   ├── placeholders.ts      # sustitución case-sensitive + mapa de marcadores
-│   ├── moduleMerge.ts        # merge del 2º/3er caso en los módulos del dominio existente
+│   ├── adapters.ts          # tipos de adapter (typeorm | sp | http) y la llamada HTTP del adapter de API externa
+│   ├── engines.ts           # motores (mssql | postgres | mysql | none): driver, puerto, opciones de TypeORM, dialecto de SP
+│   ├── connections.ts       # conexiones: nombre por motor, creación completa, detección en refactor
+│   ├── moduleMerge.ts       # merge del 2º/3er caso en los módulos del dominio existente
 │   ├── spWiring.ts          # wiring quirúrgico del adapter SP (preserva forFeature)
+│   ├── httpWiring.ts        # wiring del adapter de API externa (config, Joi, .env.example, catálogo de errores)
 │   ├── portMethods.ts       # enriquece puertos inbound/outbound a N métodos + entidades
 │   ├── spec.ts              # parser + validador del middleware.spec.yaml
 │   ├── businessRules.ts     # materializa reglas de negocio como guardas (condición inferida + NOTA)
 │   ├── dtoFields.ts         # pobla DTOs input/output y entidades request/response desde el spec
-│   ├── inventory.ts         # inventario (architecture-inventory.json) + auditoría (docs/audits)
-│   ├── inspect.ts           # descubrimiento de solo lectura del proyecto (refactor)
+│   ├── errorCodes.ts        # códigos PREFIJO-SLUG-NNN: 001-999, secuencia por prefijo
+│   ├── caseErrors.ts        # entradas de error de un caso que se suma a un dominio que ya existe
+│   ├── envFile.ts           # .env.example por secciones
 │   ├── env.ts               # .env.example derivado del joiSchema
+│   ├── apiDocs.ts           # documentación leída del código (contrato, diagramas, Postman, arquitectura)
+│   ├── inventory.ts         # inventario (architecture-inventory.json) + auditoría (docs/audits)
+│   ├── learnings.ts         # aprendizaje por repo (consultivo; docs/mcp-learnings.json)
+│   ├── agenticKit.ts        # kit de agentes: instalación, actualización y revisión automática
+│   ├── inspect.ts           # descubrimiento de solo lectura del proyecto (refactor)
 │   └── schemas.ts           # inputs zod compartidos
 └── tools/
     ├── scaffold.ts          # scaffold_service
     ├── addUseCase.ts        # add_use_case (vertical slice; greenfield y refactor)
-    ├── generateFromSpec.ts  # generate_from_spec (genera un módulo desde el spec)
+    ├── generateFromSpec.ts  # generate_from_spec (un módulo desde el spec)
+    ├── addAuthorization.ts  # add_authorization
+    ├── apiDocs.ts           # generate_api_docs
     ├── architecture.ts      # record_architecture (inventario + auditoría)
-    └── support.ts           # get_rules, inspect_project, verify_standards, list_templates, get_template
+    ├── learnings.ts         # get_learnings, record_decision
+    ├── agentic.ts           # install_agentic_kit, get_flow
+    ├── support.ts           # get_rules, inspect_project, verify_standards, list_templates, get_template
+    └── kit.ts               # withKit: instala el kit de agentes antes de las tools que trabajan sobre un repo
 templates/
 ├── rules.yaml                       # cerebro de calidad agnóstico (lo devuelve get_rules)
 ├── middleware.spec.template.yaml    # plantilla del spec declarativo
-├── config/                          # base del proyecto NestJS generado + enforcement
-├── shared/                          # capa transversal (JSON:API, errores, logger, config, BD)
-└── _domain-slice/                   # plantilla de un caso de uso hexagonal completo
-test/                                # suite con el runner nativo de Node (node:test)
+├── config/                          # base del proyecto NestJS generado + enforcement (verify-standards, eslint, Dockerfile...)
+├── shared/                          # capa transversal (JSON:API, errores, logger, config, seguridad, health, utils)
+├── database/                        # módulo y opciones de TypeORM por motor
+├── authorization/                   # autorización opt-in del borde HTTP
+├── agentic/                         # agentes del kit (generator, worker, auditor) y sección de AGENTS.md
+└── _domain-slice/                   # plantilla de un caso de uso hexagonal (adapters typeorm, sp y http)
+test/                                # suite con el runner nativo de Node (node:test) + e2e real
 ```
 
 > **Nota de arquitectura — acoplamiento:** `generate_from_spec` reutiliza `add_use_case` como motor de siembra y luego aplica los enriquecedores (`portMethods`, `dtoFields`, `businessRules`) y el inventario. Es un acoplamiento deliberado y unidireccional (tools → lib), que mantiene el camino imperativo (`add_use_case`) intacto mientras el declarativo (`generate_from_spec`) se construye encima.
@@ -161,21 +177,38 @@ flowchart LR
 ## Capacidades
 
 ### Generación (greenfield)
-- `scaffold_service` siembra la **capa `shared` completa** (JSON:API, errores, logger, config + Joi, database-context, utils), los archivos de **config/enforcement** (eslint, prettier, Dockerfile, verify-standards, hooks husky), `main.ts` con **cabeceras de seguridad** y `app.module.ts` canónico, más el `.env.example` derivado del joiSchema.
+- `scaffold_service` siembra la **capa `shared` completa** (JSON:API, errores, logger, config + Joi, seguridad, health, utils), los archivos de **config/enforcement** (eslint, prettier, Dockerfile, verify-standards, hooks husky), `main.ts`, `app.module.ts`, un `.gitignore` que excluye `.env` (nunca pisa el del proyecto) y el `.env.example` por secciones derivado del joiSchema.
+- **Motor de base de datos:** el agente lo pregunta (`mssql`, `postgres`, `mysql`) y de la respuesta salen el driver, las opciones de TypeORM y el dialecto del stored procedure. Con `none` (el servicio no usa base de datos) no se genera ninguna conexión, módulo, variable `DB_*` ni driver.
+- **Conexiones:** su nombre no se pregunta, sale del motor (`Mssql`, `Postgres`, `Mysql`); una adicional del mismo motor se numera (`Mssql2`, variables `DB_MSSQL2_*`).
 
 ### Vertical slice (greenfield y refactor)
-- `add_use_case` genera un caso completo: **puertos inbound/outbound**, domain/application services, adapter (TypeORM por defecto; **SP opt-in**), controller JSON:API + DTOs, entidades de dominio y TypeORM, catálogos de error y los módulos del dominio.
-- **Multi-caso:** al añadir el 2º/3er caso al mismo dominio, **mergea** el caso en los módulos existentes (controller, adapter, providers, tokens, `forFeature`) de forma idempotente.
+- `add_use_case` genera un caso completo: **puertos inbound/outbound**, domain/application services, adapter, controller JSON:API + DTOs, entidades de dominio, catálogos de error y los módulos del dominio.
+- **Tres adapters:** `typeorm` (por defecto), `sp` (stored procedure, opt-in) y `http` (**API externa** con el `fetch` nativo; no necesita base de datos ni conexión). El adapter `http` declara `<API>_BASE_URL` en la configuración, en Joi y en el `.env.example`, y traduce las respuestas (404 = no encontrado; error o API caída = 502 `EXTERNAL_API_ERROR`).
+- **Multi-caso:** al añadir el 2º/3er caso al mismo dominio, **mergea** el caso en los módulos y catálogos existentes de forma idempotente.
+- **Refactor:** reutiliza la conexión que el proyecto ya tiene (se detecta; no se pregunta nombre ni motor). Si no tiene ninguna, el MCP **no crea una por su cuenta**: solo con pedido expreso (`crearConexion=true` + motor).
 
 ### Generación declarativa (desde spec)
-- `generate_from_spec` toma un `middleware.spec.yaml` y genera el módulo. Soporta **casos con N métodos por puerto** con entidades request/response tipadas. **Hexagonal puro:** la firma del método del puerto es siempre `(data: Request)` — el nombre del stored procedure NO viaja por el puerto (es infraestructura); el **adapter SP** lo resuelve internamente desde `ConfigurationVariables`. El branching de negocio se modela como métodos distintos del puerto. Materializa **DTOs input/output** y **reglas de negocio** (con condición inferida + NOTA para agentes y usuarios), y actualiza el inventario. `dryRun=true` (default) devuelve el **plan** sin escribir disco.
+- `generate_from_spec` toma un `middleware.spec.yaml` y genera el módulo. Soporta **casos con N métodos por puerto** con entidades request/response tipadas. **Hexagonal puro:** la firma del método del puerto es siempre `(data: Request)`; el nombre del SP, la URL y el verbo de una API externa son infraestructura y no viajan por el puerto. Materializa **DTOs input/output** y **reglas de negocio** (con condición inferida + NOTA), y actualiza el inventario. `dryRun=true` (default) devuelve el **plan** sin escribir disco.
+
+### Seguridad y borde HTTP (obligatorios)
+- Cabeceras de seguridad, rate limit con los tres controles (por IP, concurrencia, tamaño de payload), correlation ID (también hacia APIs externas), CORS por variable, health público (`POST /{api}/api/v1/health`), errores del parser con el sobre del área y solo `POST` con `application/vnd.api+json`.
+- **Autorización** opt-in (`add_authorization`): puerto agnóstico + Guard global, secure-by-default y fail-closed. El agente siempre pregunta.
+- Sin `axios` (se usa `fetch`) y sin `uuid` (se usa `crypto`).
+
+### Códigos de error
+- Formato `<PREFIJO>-<SLUG>-<NNN>`, por ejemplo `CATALOG-PRODUCTNOTFOUND-001`. El número va de 001 a 999 y es una secuencia **por prefijo** que asigna el MCP leyendo el código existente: dos errores nunca comparten número.
+
+### Documentación de la API
+- `generate_api_docs` lee el código y escribe el contrato por módulo, un diagrama Mermaid de secuencia por módulo y el índice; opcionalmente la colección de Postman y `docs/ARCHITECTURE.md` (`architecture-beta`). Se mantiene al día en cada generación.
 
 ### Verificación y descubrimiento
-- `verify_standards`: naming (bloquea typos como `,entity.ts`), cabeceras de seguridad, @Version, `.env.example` sincronizado, SP declarado.
-- `inspect_project`: descubrimiento de **solo lectura** del proyecto destino (convención de carpetas, forma de la conexión TypeORM, infra transversal a reusar con sus **nombres de clase**).
+- `verify_standards` corre el verificador del servicio generado con **reglas de ID estable**: naming, seguridad HTTP, correlation ID, `@Version`, `.env.example` y defaults de Joi, autorización, health, conexiones de BD, SP declarado, reglas de código (sin `console.log`, `process.env` directo, `any`, dinero como float, HTTP en el core...), dependencias prohibidas, documentación desactualizada, códigos de error repetidos y `.env` sin ignorar por git.
+- `inspect_project`: descubrimiento de **solo lectura** del proyecto destino (convención de carpetas, forma de la conexión TypeORM, infra transversal a reusar con sus **nombres de clase**, nombre que tomaría una conexión nueva).
 
-### Memoria por repo
+### Memoria por repo y agentes
 - `record_architecture`: inventario `docs/architecture-inventory.json` (una entrada por módulo, **sin tocar las de otros**) + auditoría `docs/audits/<module>-<fecha>.md`.
+- `get_learnings` / `record_decision`: memoria **consultiva** por repo (prefijos, conexiones, decisión de autorización, errores que se repiten); nunca cambia las reglas base.
+- **Kit de agentes** (`middleware-generator`, `middleware-gen-worker`, `middleware-auditor`): se instala solo la primera vez que una herramienta trabaja sobre un repo (ver más abajo). El agente prepara el entorno: corre `npm install`, crea el `.env` con los valores que le da el usuario y no repite contraseñas.
 
 ---
 
@@ -211,46 +244,99 @@ Añade el servidor a la config MCP. Workspace: `.kiro/settings/mcp.json`. Usuari
 ```json
 {
   "mcpServers": {
-    "midd-hexagonal-nestjs": {
+    "midd-nestjs-hexagonal-architecture": {
       "command": "node",
-      "args": ["C:/Propuestas/midd-hexagonal-nestjs-mcp/dist/index.js"],
+      "args": ["C:/Propuestas/midd-nestjs-hexagonal-architecture-mcp/dist/index.js"],
       "disabled": false,
-      "autoApprove": []
+      "autoApprove": ["get_rules", "get_flow", "get_learnings", "list_templates", "get_template", "inspect_project"]
     }
   }
 }
 ```
 
-Tras guardar, reconecta el servidor desde la vista MCP de Kiro (o reinicia). Las 15 herramientas y los 3 prompts aparecerán disponibles.
+Solo las herramientas de lectura van en `autoApprove`; las que escriben archivos piden confirmación.
+
+**Actualizar el MCP:** `npm run build` y reconectar el servidor desde la vista MCP de Kiro. El repo no necesita nada más.
+
+> Este MCP comparte nombres de herramientas (`scaffold_service`, `add_use_case`, `get_rules`...) con `midd-hexagonal-nestjs` y `midd-architecture`. Si los tienes activos a la vez, desactiva los otros para que el agente no llame a uno equivocado.
+
+### Instalación automática de los agentes
+
+No hace falta pedir `install_agentic_kit`. La primera herramienta que trabaja sobre un repo (`scaffold_service`, `add_use_case`, `generate_from_spec`, `add_authorization`, `inspect_project`) revisa si el kit está y, si no, lo instala antes de seguir:
+
+| Situación del repo | Qué hace el MCP |
+|---|---|
+| No tiene el kit | Lo instala: `.kiro/agents/middleware-generator.md`, `middleware-gen-worker.md`, `middleware-auditor.md`, `agentic/templates/` y la sección del MCP en `AGENTS.md`. Avisa qué agente seleccionar. |
+| Tiene el kit de una versión anterior | Lo actualiza y conserva los modelos que el equipo haya puesto en los agentes. |
+| Ya está al día | No escribe nada. `scaffold_service` e `inspect_project` solo recuerdan qué agente usar. |
+| Hay un agente con esos nombres que no instaló este MCP | No toca nada y lo dice (los tres agentes van como conjunto). Para reemplazarlos: `install_agentic_kit` con `overwrite=true`. |
+
+**El agente del chat no lo puede fijar un MCP.** Kiro lo elige en el selector de agentes de la barra del chat (junto al selector de modelo); el agente aparece ahí al guardarse el archivo, y si no se ve hay que recargar la ventana. Según el changelog de Kiro IDE 1.0, ese mismo selector permite dejar un agente preferido que persiste entre reinicios. Un chat que ya empezó con el agente por defecto sigue con él hasta que se cambie.
+
+Para desactivar la instalación automática, en la configuración del servidor MCP:
+
+```json
+"env": { "MIDD_NESTJS_AUTO_KIT": "off" }
+```
 
 ---
 
 ## Variables de entorno
 
-El **servidor MCP en sí no requiere variables de entorno**. Las variables documentadas aquí son las del **servicio NestJS que el MCP genera** (derivadas del `joiSchema` del dataset, que es la fuente de verdad y alimenta el `.env.example`).
+### Del servidor MCP
+
+| Variable | Valores | Descripción |
+|----------|---------|-------------|
+| `MIDD_NESTJS_AUTO_KIT` | `off` / `0` / `false` / `no` | Desactiva la instalación automática del kit de agentes. Por defecto está activa. Se define en `env` de la config MCP. |
+
+### Del servicio que el MCP genera
+
+Derivadas del `joiSchema` (fuente de verdad, que alimenta el `.env.example`). Todo lo que tiene valor por defecto lo aplica Joi si la variable no está configurada.
 
 | Variable | Tipo | Requerida | Descripción |
 |----------|------|-----------|-------------|
-| `PORT` | number | sí (default 3000) | Puerto HTTP del servicio generado. |
-| `DB_<CONEXION>_HOST` | string | sí | Host de la BD de esa conexión (p.ej. `DB_CATALOG_HOST`). |
-| `DB_<CONEXION>_PORT` | number | sí | Puerto (default del motor: mssql 1433, postgres 5432, mysql 3306). |
-| `DB_<CONEXION>_USERNAME` | string | sí | Usuario de BD. |
-| `DB_<CONEXION>_PASSWORD` | string | sí | Contraseña de BD. |
-| `DB_<CONEXION>_NAME` | string | sí | Nombre de la base de datos. |
-| `<NOMBRE_SP>_SP` | string | condicional | Se añade automáticamente por cada caso con adapter `sp`. |
+| `PORT` | number | no (3000) | Puerto HTTP. |
+| `API_CONTEXT` | string | **sí** | Prefijo de la API (`prefijoApi`): los endpoints quedan en `/<prefijo>/api/v1/{recurso}`. |
+| `CORS_ALLOWED_ORIGINS` | string | no (`*`) | Orígenes permitidos separados por coma. `*` es el valor por defecto (middleware servidor-a-servidor); se restringe con la variable, sin tocar código. |
+| `RL_MAX_REQUESTS_PER_WINDOW` / `RL_WINDOW_SECONDS` | number | no (150 / 5) | Peticiones por IP en la ventana. Al pasarse: 429. |
+| `RL_MAX_CONCURRENT_PER_IP` | number | no (20) | Conexiones simultáneas por IP. |
+| `RL_MAX_PAYLOAD_BYTES` / `RL_MAX_JSON_PAYLOAD_BYTES` | number | no (8 MB / 2 MB) | Tamaño máximo del cuerpo. Al pasarse: 413. |
+| `RL_CACHE_TTL_MS` / `RL_CACHE_MAX_ENTRIES` | number | no (600000 / 100000) | Cuánto y cuántas IPs recuerda el contador. |
+| `RL_TRUSTED_PROXIES` | string | no (rangos privados) | Proxies de confianza para leer la IP real. |
+| `DB_<CONEXION>_HOST` / `_PORT` / `_USERNAME` / `_PASSWORD` / `_NAME` | string / number | **sí**, si hay conexión | Por conexión (p.ej. `DB_MSSQL_HOST`). El puerto por defecto depende del motor: mssql 1433, postgres 5432, mysql 3306. |
+| `AUTHORIZATION_API_URL` | URL | solo con autorización | API de autorización. |
+| `<API>_BASE_URL` | URL | condicional | URL base de cada API externa consumida por un caso `http` (p.ej. `EXCHANGE_RATES_BASE_URL`). Sin ella el servicio no arranca. |
+| `<NOMBRE_SP>_SP` | string | condicional | Se añade por cada caso con adapter `sp`. |
 
-`.env.example` generado para un servicio nuevo:
+`.env.example` generado (agrupado por temas; cada herramienta mete su variable en su sección):
 
 ```dotenv
+# --- Server ---
 PORT=3000
-DB_CATALOG_HOST=localhost
-DB_CATALOG_PORT=1433
-DB_CATALOG_USERNAME=sa
-DB_CATALOG_PASSWORD=changeme
-DB_CATALOG_NAME=MyDatabase
+API_CONTEXT=midd-catalog
+
+# --- CORS ---
+CORS_ALLOWED_ORIGINS=*
+
+# --- Ratelimit ---
+RL_MAX_REQUESTS_PER_WINDOW=150
+# ... las demás RL_*
+
+# --- Database connection 'Mssql' (SQL Server) ---
+DB_MSSQL_HOST=localhost
+DB_MSSQL_PORT=1433
+DB_MSSQL_USERNAME=sa
+DB_MSSQL_PASSWORD=changeme
+DB_MSSQL_NAME=MyDatabase
+
+# --- Authorization ---
+AUTHORIZATION_API_URL=...
+
+# --- External APIs ---
+EXCHANGE_RATES_BASE_URL=https://api.example.com
 ```
 
-> **CORS:** actualmente los servicios generados abren CORS a `origin: '*'` de forma **temporal** (middleware servidor-a-servidor). `verify_standards` lo marca como WARN (no bloquea) para recordar restringirlo por dominios cuando se definan los orígenes.
+> **El `.env` real lo crea el agente**, a partir del `.env.example` y con los valores que le da el usuario (sin repetir contraseñas). El `.gitignore` generado lo excluye y `verify_standards` falla con `ENV_NOT_IGNORED` si un `.env` no está ignorado por git.
 
 ---
 
@@ -264,12 +350,12 @@ Devuelve `rules.yaml`: el **cerebro de calidad agnóstico** (arquitectura hexago
 
 ### `scaffold_service`
 Genera la base de un servicio NestJS hexagonal nuevo.
-- **Input:** `projectRoot`, `conexion` (PascalCase), `motor` (`mssql`|`postgres`|`mysql`, obligatorio: el agente lo pregunta), `prefijoServicio` (kebab-case), `prefijoError` (MAYÚSCULAS), `overwrite?`
+- **Input:** `projectRoot`, `conexion?` (opcional: por defecto el nombre del motor), `motor` (`mssql`\|`postgres`\|`mysql`\|`none`, obligatorio: el agente lo pregunta; `none` = sin base de datos, no se genera ninguna conexión), `prefijoApi` (kebab-case), `prefijoError` (MAYÚSCULAS), `overwrite?`
 - **Escribe:** `src/shared/**`, config/enforcement, `main.ts`, `app.module.ts`, `.env.example`.
 
 ### `add_use_case`
 Genera un caso de uso completo (vertical slice).
-- **Input:** `projectRoot`, `dominio`, `caso`, `entidad`, `metodo`, `param`, `request?`, `accion`, `prefijoError`, `conexion`, `motor?` (obligatorio solo si la conexión es nueva), `adapterType` (`typeorm`|`sp`), `nombreSp?`, `envVarSp?`, `mode` (`greenfield`|`refactor`), `connectionStyle` (`named`|`default`), `infraStyle` (`dataset`|`project`), `infraRoot?`, `overwrite?`
+- **Input:** `projectRoot`, `dominio`, `caso`, `entidad`, `metodo`, `param`, `request?`, `accion`, `prefijoError`, `conexion?` (opcional), `crearConexion?` (solo refactor, si el usuario la pidió expresamente), `motor?` (obligatorio solo si la conexión es nueva), `adapterType` (`typeorm`\|`sp`\|`http`), `nombreSp?`, `apiExterna?`, `rutaApi?`, `metodoHttp?`, `envVarSp?`, `mode` (`greenfield`|`refactor`), `connectionStyle` (`named`|`default`), `infraStyle` (`dataset`|`project`), `infraRoot?`, `overwrite?`
 - **Nota:** SP requiere `nombreSp` (opt-in). En `refactor` no toca `app.module`.
 
 ### `generate_from_spec`
@@ -322,6 +408,8 @@ Agnóstico de dominio: `module`, `entity` y `use_cases` los define el usuario. U
 - **`moduleMerge.ts`** — registra casos adicionales en los módulos del dominio (controller, adapter, providers, tokens, `forFeature`, `app.module`) balanceando corchetes y evitando duplicados.
 - **`spWiring.ts`** — wiring SP quirúrgico: apunta al `.sp.adapter`, quita del `forFeature` **solo** la entidad del caso SP (preserva las demás), y registra el SP en config/joi/`.env`.
 - **`portMethods.ts`** — añade N métodos tipados a puertos/domain service/adapter y crea las entidades `*.entity.ts` faltantes.
+- **`httpWiring.ts`** — wiring del adapter de API externa: apunta los módulos al `.http.adapter`, declara `<API>_BASE_URL` (config + Joi `.uri().required()` + `.env.example`) y la entrada `EXTERNAL_API_ERROR` del catálogo.
+- **`caseErrors.ts` / `errorCodes.ts`** — un caso nuevo en un dominio existente agrega sus entradas a los catálogos de error, y cada código toma el siguiente número libre del prefijo.
 - **`businessRules.ts`** — materializa reglas como guardas con `GenericException`; infiere la condición por patrón (obligatorio, enum, unicidad, 404, branching) y estampa una **NOTA** de que es una aproximación a revisar.
 
 ### Convención de nombres
@@ -345,24 +433,30 @@ npm run test:e2e # genera, instala, compila y arranca un servicio real (necesita
 | `test/inventory.test.mjs` | Envelope, agregar 2º módulo sin tocar el 1º, reemplazo de entrada, auditoría. |
 | `test/placeholders.test.mjs` | Derivación de case, `__Request__`, sustitución case-sensitive, `<ConexionArg>`. |
 | `test/scaffold.e2e.test.mjs` | Genera servicios y exige que `verify-standards` pase limpio; una mutación por cada regla bloqueante (seguridad, ruta, dependencias, autorización, health, SP). |
-| `test/apiDocs.test.mjs` | Documentación generada desde el código: contrato, diagrama, fusión de Postman sin pisar otras carpetas, `architecture-beta` opt-in, refresco automático, comentarios ignorados y avisos del verificador. |
-| `test/agentic.test.mjs` | Kit de agentes: instalación idempotente, `AGENTS.md` ajeno/CRLF/roto, modelos, consistencia del pipeline y herramientas registradas por protocolo MCP. |
+| `test/database.test.mjs` | Motores (mssql, postgres, mysql): perfiles, dialecto de SP con un DataSource falso, conexiones adicionales, el motor es obligatorio. |
+| `test/connectionName.test.mjs`, `test/noDatabase.test.mjs` | Nombre de la conexión por motor, reutilización, refactor (detecta, no crea sin pedido expreso) y servicio sin base de datos. |
+| `test/httpAdapter.test.mjs` | Adapter de API externa: cableado sin base de datos, verbos GET/POST/PUT, config/Joi/.env, mezcla con TypeORM, spec, refactor, documentación. |
+| `test/errorCodes.test.mjs` | Códigos `PREFIJO-SLUG-NNN`: secuencia por prefijo, 001-999, agotamiento, capa compartida de 3 dígitos y reglas del verificador. |
+| `test/envFile.test.mjs`, `test/environment.test.mjs` | `.env.example` por secciones y defaults de Joi; pasos dirigidos al agente, `.gitignore` y `ENV_NOT_IGNORED`. |
+| `test/apiDocs.test.mjs` | Documentación generada desde el código: contrato, diagrama, fusión de Postman, `architecture-beta`, refresco automático y avisos del verificador. |
+| `test/agentic.test.mjs`, `test/autoKit.test.mjs` | Kit de agentes: instalación idempotente, `AGENTS.md` ajeno/roto, modelos; instalación automática por el protocolo MCP (instala, actualiza conservando modelos, respeta agentes ajenos, opt-out). |
 | `test/learnings.test.mjs` | Aprendizaje por repo: captura, saneamiento de texto hostil, y que el verificador no lo lee. |
-| `test/e2e/compile.e2e.mjs` | **End-to-end real** (`npm run test:e2e`): genera 2 módulos (SP y TypeORM) + autorización, `npm install`, `npm run build`, los tests y el lint del servicio generado, `verify-standards`, y lo arranca para probar por HTTP: health, cabeceras, 401/403/200, 413 (con y sin `Content-Length`), 400, 429. Sin una base de datos viva, el borde HTTP se arranca sin ella; también comprueba que el driver quede en `dependencies`. |
+| `test/e2e/compile.e2e.mjs` | **End-to-end real** (`npm run test:e2e`): genera módulos (SP y TypeORM) + autorización, `npm install`, `npm run build`, tests y lint del servicio generado, `verify-standards`, y lo arranca para probarlo por HTTP (health, cabeceras, 401/403/200, 413, 400, 429, defaults de Joi sin variables). Además un servicio **sin base de datos** que consume una API externa falsa (200, 404, 502, API caída, propagación del correlation ID). |
 
-**Estado actual:** 100 tests rápidos y 1 end-to-end (19 comprobaciones), todos en verde.
+**Estado actual:** 213 tests rápidos y 25 comprobaciones end-to-end, todos en verde. Lo que **no** está probado: postgres y mysql contra motores vivos (solo con un DataSource falso), y la conversación del agente con modelos reales dentro de Kiro.
 
 ---
 
 ## DevOps
 
 - **Build:** `tsc` (TypeScript → `dist/`, ESM `Node16`). Configuración en `tsconfig.json` (target ES2022, `strict: true`).
-- **Empaquetado:** `package.json` → `bin: midd-hexagonal-mcp`, `files: [dist, templates]`. El dataset viaja con el paquete.
+- **Empaquetado:** `package.json` → `bin: midd-nestjs-hexagonal-mcp`, `files: [dist, templates]`. El dataset viaja con el paquete.
 - **Transporte:** stdio (`StdioServerTransport`). `stdout` reservado para el protocolo; los logs van a `stderr`.
 - **CI/CD propio del MCP:** _pendiente de confirmar_ — no se detectó pipeline (`.github/`, `.gitlab-ci.yml`) ni Dockerfile para el propio servidor en el repo. (El `Dockerfile` que existe está en `templates/config/` y pertenece al **servicio generado**, no al MCP.)
 - **`.gitignore`:** ignora `node_modules`, `dist`, `*.log`, `.DS_Store`.
+- **Repo del MCP:** hoy solo tiene `git init` (sin commits ni remoto).
 
-> **Seguridad en los servicios generados** (no en el MCP): `main.ts` fuerza Helmet, HSTS (1 año), CSP, `X-Content-Type-Options`, Referrer-Policy, Permissions-Policy, `Cache-Control: no-store`. CORS está temporalmente abierto a `*` (ver nota en Variables de entorno).
+> **Seguridad en los servicios generados** (no en el MCP): `main.ts` fuerza Helmet, HSTS (1 año), CSP, `X-Content-Type-Options`, Referrer-Policy, Permissions-Policy, `Cache-Control: no-store`. CORS vale `*` por defecto y se restringe con `CORS_ALLOWED_ORIGINS` (ver Variables de entorno).
 
 ---
 
@@ -386,6 +480,8 @@ npm run test:e2e # genera, instala, compila y arranca un servicio real (necesita
 - **Parcheo idempotente y quirúrgico:** los enriquecedores nunca duplican ni tocan código de otros casos/módulos.
 - **Leer `get_rules` (y el inventario) antes de generar:** así todo sale consistente y no se duplican módulos.
 - **`dryRun` por defecto:** revisa el plan antes de escribir disco.
+- **El agente ejecuta, el usuario decide:** `npm install`, el `.env` y el arranque los hace el agente; al usuario solo se le piden los valores. Nunca se repiten contraseñas ni tokens.
+- **El MCP no cambia el agente del chat:** lo elige el usuario en el selector de Kiro; el MCP instala los agentes y avisa cuál usar.
 - **stdout limpio:** en un servidor MCP stdio, nunca escribas a `stdout` fuera del protocolo (usa `stderr`).
 
 ---
@@ -393,6 +489,10 @@ npm run test:e2e # genera, instala, compila y arranca un servicio real (necesita
 ## Mejoras sugeridas
 
 - CI propio del MCP (lint + build + test en cada push).
+- Probar postgres y mysql contra motores vivos (hoy solo con un DataSource falso).
+- Autenticación en el adapter de API externa (hoy deja un TODO; las credenciales deben salir de `ConfigurationVariables`).
+- Textos de plantilla de los errores generados (`Título legible del error.`): rellenarlos desde la entidad y avisar con una regla del verificador.
+- Confirmar el formato vigente de los agentes de Kiro (`permissions` en lugar de `allowedTools`/`toolsSettings`) y migrarlos si hace falta.
 
 ---
 

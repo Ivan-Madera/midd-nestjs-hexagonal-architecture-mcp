@@ -32,7 +32,7 @@ const useCase = (root, overrides) =>
   })
 
 const scaffold = (root, motor = 'mssql', conexion = 'Catalog') =>
-  scaffoldService({ projectRoot: root, conexion, motor, prefijoServicio: 'midd-catalog', prefijoError: 'CATALOG', overwrite: true })
+  scaffoldService({ projectRoot: root, conexion, motor, prefijoApi: 'midd-catalog', prefijoError: 'CATALOG', overwrite: true })
 
 /** SQL Server primary + a PostgreSQL module with TypeORM + a MySQL module with stored procedures. */
 async function threeEngines(root) {
@@ -136,10 +136,10 @@ test('the engine is mandatory: scaffold_service without it, or with an unknown o
   try {
     await client.connect(transport)
     const tool = (await client.listTools()).tools.find((t) => t.name === 'scaffold_service')
-    assert.deepEqual(tool.inputSchema.properties.motor.enum, ['mssql', 'postgres', 'mysql'])
+    assert.deepEqual(tool.inputSchema.properties.motor.enum, ['mssql', 'postgres', 'mysql', 'none'], 'the three engines, or none = no database')
     assert.ok(tool.inputSchema.required.includes('motor'), 'no default: the user is always asked')
 
-    const base = { projectRoot: root, conexion: 'Catalog', prefijoServicio: 'svc', prefijoError: 'SVC' }
+    const base = { projectRoot: root, conexion: 'Catalog', prefijoApi: 'svc', prefijoError: 'SVC' }
     for (const args of [base, { ...base, motor: 'oracle' }]) {
       const out = await client.callTool({ name: 'scaffold_service', arguments: args }).then((r) => r, (e) => e)
       assert.ok(out instanceof Error || out.isError === true)
@@ -159,7 +159,7 @@ test('a connection name that is not PascalCase is refused (it ends up in generat
     await client.connect(transport)
     for (const conexion of ["Catalog'); drop", 'catalog', 'Cat alog', '../Catalog']) {
       const out = await client
-        .callTool({ name: 'scaffold_service', arguments: { projectRoot: root, conexion, motor: 'mssql', prefijoServicio: 'svc', prefijoError: 'SVC' } })
+        .callTool({ name: 'scaffold_service', arguments: { projectRoot: root, conexion, motor: 'mssql', prefijoApi: 'svc', prefijoError: 'SVC' } })
         .then((r) => r, (e) => e)
       assert.ok(out instanceof Error || out.isError === true, `"${conexion}" must be rejected`)
     }
@@ -288,11 +288,16 @@ test('the spec must say the engine of its connection: no default, only the three
     use_cases: [{ name: 'RetrieveReport', action: 'retrieveReport', resource_type: 'report', adapter: 'typeorm', methods: [{ name: 'a', request: 'A', response: 'B' }] }],
     business_rules: { none: true, rules: [] }
   }
-  for (const engine of [undefined, '', 'oracle', 'sqlserver']) {
+  for (const engine of ['oracle', 'sqlserver']) {
     assert.throws(
       () => validateSpec({ ...base, connection: { name: 'Reporting', style: 'named', engine } }),
       (e) => e instanceof SpecValidationError && e.problems.some((p) => p.includes('connection.engine') && p.includes('mssql | postgres | mysql'))
     )
+  }
+  // Missing is not a spec error: generate_from_spec requires it to CREATE a connection (greenfield) and a
+  // refactor does not need it because it reuses the project's own connection.
+  for (const engine of [undefined, '']) {
+    assert.equal(validateSpec({ ...base, connection: { name: 'Reporting', style: 'named', engine } }).connection.engine, undefined)
   }
   for (const engine of MOTORES) assert.equal(validateSpec({ ...base, connection: { name: 'Reporting', style: 'named', engine } }).connection.engine, engine)
 })

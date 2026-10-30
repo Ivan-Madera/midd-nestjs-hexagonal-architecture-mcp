@@ -1,6 +1,7 @@
+import { isAdapterType, isApiPath, isHttpVerb, type AdapterType, type HttpVerb } from './adapters.js'
 import { readFileSync, existsSync } from 'node:fs'
 import { parse as parseYaml } from 'yaml'
-import { MOTORES, isMotor, type Motor } from './engines.js'
+import { MOTORES, SIN_BASE_DE_DATOS, isMotorChoice, type MotorChoice } from './engines.js'
 
 /**
  * Parser + validador del middleware.spec.yaml.
@@ -16,13 +17,16 @@ export type SpecMethod = {
   request: string // entidad de dominio de entrada
   response: string // entidad de dominio de salida
   sp?: string // nombre del SP si el caso usa adapter 'sp'
+  http?: { method: HttpVerb; path: string } // llamada a la API externa si el caso usa adapter 'http'
 }
 
 export type SpecUseCase = {
   name: string // PascalCase
   action: string // ruta del endpoint POST
   resourceType: string // 'type' JSON:API (kebab)
-  adapter: 'typeorm' | 'sp'
+  adapter: AdapterType
+  /** adapter http: PascalCase name of the external API; its base URL is <NAME>_BASE_URL */
+  api?: string
   methods: SpecMethod[]
 }
 
@@ -32,7 +36,8 @@ export type MiddlewareSpec = {
   description: string
   stack: 'nestjs'
   errorPrefix: string // MAYUSCULAS
-  connection: { name: string; style: 'named' | 'default'; engine: Motor }
+  /** engine is mandatory to CREATE a connection (greenfield); a refactor reuses the project's own, so it is not asked. */
+  connection: { name: string; style: 'named' | 'default'; engine?: MotorChoice; create?: boolean }
   useCases: SpecUseCase[]
   dtos: { input: Record<string, unknown>; output: Record<string, unknown> }
   businessRules: { none: boolean; rules: string[] }
@@ -101,16 +106,16 @@ export function validateSpec(input: unknown): MiddlewareSpec {
   const connIn = (obj.connection ?? {}) as Record<string, any>
   const connName = String(connIn.name ?? '').trim()
   const connStyle = String(connIn.style ?? 'named').trim()
-  if (!connName) problems.push('connection.name es obligatorio (PascalCase, p.ej. "Catalog").')
-  else if (!isPascalCase(connName))
+  // connection.name is optional: without it the MCP names the connection after its engine (Mssql, Postgres, Mysql).
+  if (connName && !isPascalCase(connName))
     problems.push(`connection.name debe ser PascalCase: "${connName}".`)
   if (connStyle !== 'named' && connStyle !== 'default')
     problems.push(`connection.style debe ser "named" o "default" (recibido: "${connStyle}").`)
   const connEngine = String(connIn.engine ?? '').trim()
-  if (!isMotor(connEngine))
-    problems.push(
-      `connection.engine es obligatorio: ${MOTORES.join(' | ')} (recibido: "${connEngine}"). Se le pregunta al usuario; no hay default.`
-    )
+  // Present but unknown is always a mistake. Missing is checked by generate_from_spec: it is mandatory to create a
+  // connection (greenfield) and not needed in a refactor, where the project's own connection is reused.
+  if (connEngine && !isMotorChoice(connEngine))
+    problems.push(`connection.engine no es valido: ${MOTORES.join(' | ')} | ${SIN_BASE_DE_DATOS} (recibido: "${connEngine}").`)
 
   // Casos de uso
   const rawUseCases = Array.isArray(obj.use_cases ?? obj.useCases) ? (obj.use_cases ?? obj.useCases) : []
@@ -128,8 +133,13 @@ export function validateSpec(input: unknown): MiddlewareSpec {
     else if (!isPascalCase(name)) problems.push(`${where}.name debe ser PascalCase: "${name}".`)
     if (!action) problems.push(`${where}.action es obligatorio (ruta del endpoint POST).`)
     if (!resourceType) problems.push(`${where}.resource_type es obligatorio (type JSON:API, kebab-case).`)
-    if (adapter !== 'typeorm' && adapter !== 'sp')
-      problems.push(`${where}.adapter debe ser "typeorm" o "sp" (recibido: "${adapter}").`)
+    if (!isAdapterType(adapter))
+      problems.push(`${where}.adapter debe ser "typeorm", "sp" o "http" (recibido: "${adapter}").`)
+    const api = ucRaw?.api != null ? String(ucRaw.api).trim() : undefined
+    if (adapter === 'http') {
+      if (!api) problems.push(`${where}.api es obligatorio cuando adapter="http" (nombre PascalCase de la API externa, p.ej. "ExchangeRates").`)
+      else if (!isPascalCase(api)) problems.push(`${where}.api debe ser PascalCase: "${api}".`)
+    }
 
     const rawMethods = Array.isArray(ucRaw?.methods) ? ucRaw.methods : []
     if (rawMethods.length === 0)
@@ -154,14 +164,23 @@ export function validateSpec(input: unknown): MiddlewareSpec {
       if (adapter === 'sp' && !sp)
         problems.push(`${mwhere}.sp es obligatorio cuando adapter="sp" (nombre del stored procedure).`)
 
-      methods.push({ name: mName, request, response, sp })
+      let http: SpecMethod['http']
+      if (adapter === 'http') {
+        const verb = String(mRaw?.http?.method ?? 'GET').trim().toUpperCase()
+        const path = String(mRaw?.http?.path ?? '').trim()
+        if (!isHttpVerb(verb)) problems.push(`${mwhere}.http.method debe ser GET, POST o PUT (recibido: "${verb}").`)
+        else if (!isApiPath(path)) problems.push(`${mwhere}.http.path es obligatorio y empieza con "/" (p.ej. "/rates"; sin espacios ni query string).`)
+        else http = { method: verb, path }
+      }
+      methods.push({ name: mName, request, response, sp, http })
     })
 
     useCases.push({
       name,
       action,
       resourceType,
-      adapter: adapter === 'sp' ? 'sp' : 'typeorm',
+      adapter: isAdapterType(adapter) ? adapter : 'typeorm',
+      api: adapter === 'http' ? api : undefined,
       methods
     })
   })
@@ -205,7 +224,7 @@ export function validateSpec(input: unknown): MiddlewareSpec {
     description,
     stack: 'nestjs',
     errorPrefix,
-    connection: { name: connName, style: connStyle === 'default' ? 'default' : 'named', engine: connEngine as Motor },
+    connection: { name: connName, style: connStyle === 'default' ? 'default' : 'named', engine: isMotorChoice(connEngine) ? connEngine : undefined, create: connIn.create === true ? true : undefined },
     useCases,
     dtos,
     businessRules,

@@ -20,7 +20,8 @@ export default registerAs('ConfigurationVariables', () => {
       ApiContext: process.env.API_CONTEXT
     },
     security: {
-      // Concrete list of allowed origins, comma separated. Never '*'.
+      // Allowed origins, comma separated. Joi defaults it to '*' (tolerated for server-to-server middleware);
+      // set concrete origins in CORS_ALLOWED_ORIGINS when they are defined. No code change needed.
       corsAllowedOrigins: (process.env.CORS_ALLOWED_ORIGINS ?? '')
         .split(',')
         .map((origin) => origin.trim())
@@ -35,6 +36,10 @@ export default registerAs('ConfigurationVariables', () => {
         cacheMaxEntries: Number(process.env.RL_CACHE_MAX_ENTRIES),
         trustedProxies: process.env.RL_TRUSTED_PROXIES ?? ''
       }
+    },
+    externalApis: {
+      // One entry per external API consumed by an http adapter, added by add_use_case:
+      // ExchangeRates: { baseUrl: process.env.EXCHANGE_RATES_BASE_URL }
     },
     storedProcedures: {
       // Declare here the SP names read from env, e.g.:

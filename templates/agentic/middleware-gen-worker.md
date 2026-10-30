@@ -53,7 +53,7 @@ Si el modelo pedido no existe en este Kiro, usa el siguiente; `Auto` es la red f
    spec (`data_source.schema`). Sin esquema, deja el `TODO` y reportalo. Nunca inventes columnas.
 3. **Entidades de dominio** con campos por definir: llenalas desde `dtos` y el esquema, con el tipo correcto.
 4. **Mensajes y catalogo de errores**: si una regla necesita su entrada en el catalogo, agregala con el
-   formato del area `PREFIJO-SLUG-NNNN`.
+   formato del area `PREFIJO-SLUG-NNN` (NNN de 001 a 999; los numeros los asigna el MCP, no los inventes).
 
 ## Lo que NO haces
 

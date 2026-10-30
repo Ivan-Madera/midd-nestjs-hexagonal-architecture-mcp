@@ -1,3 +1,5 @@
+import { buildSectionedEnv } from './envFile.js'
+
 /**
  * `.env.example` generation derived from the dataset joiSchema.
  *
@@ -52,12 +54,13 @@ export function buildEnvExample(
   const keys = [...extractJoiKeys(joiSchemaText)]
   for (const k of extraKeys) if (!keys.includes(k)) keys.push(k)
   const defaults = extractJoiDefaults(joiSchemaText)
-  const lines = [
-    '# .env.example — generated from joiSchema (source of truth of the variables).',
-    '# Copy to .env and fill in the real values. Keep in sync with joiSchema.ts.',
-    '# Never commit real secrets: only placeholders belong in this file.',
-    '',
-    ...keys.map((k) => `${k}=${overrides[k] ?? defaults[k] ?? sampleValue(k)}`)
-  ]
-  return lines.join('\n') + '\n'
+  return buildSectionedEnv(
+    [
+      '# .env.example — generated from joiSchema (source of truth of the variables).',
+      '# Copy to .env and fill in the real values. Keep in sync with joiSchema.ts.',
+      '# Never commit real secrets: only placeholders belong in this file.',
+      '# Variables are grouped by topic; the keys and values are the ones of the Joi schema.'
+    ],
+    keys.map((k): [string, string] => [k, overrides[k] ?? defaults[k] ?? sampleValue(k)])
+  )
 }

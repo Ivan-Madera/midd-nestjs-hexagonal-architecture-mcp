@@ -28,6 +28,7 @@ import {
   getRulesSchema
 } from './tools/support.js'
 import { registerPrompts } from './prompts.js'
+import { withKit } from './tools/kit.js'
 
 const server = new McpServer({
   name: 'midd-nestjs-hexagonal-architecture-mcp',
@@ -42,7 +43,7 @@ server.tool(
   'scaffold_service',
   'Genera la base de un servicio NestJS hexagonal nuevo: capa shared completa (JSON:API, errores, logger, config+Joi, database-context, utils), archivos de config/enforcement (eslint, prettier, Dockerfile, verify-standards, hooks husky), main.ts y app.module.ts canónicos. Escribe en projectRoot.',
   scaffoldServiceSchema,
-  scaffoldService
+  withKit({ creates: true, entry: true }, scaffoldService)
 )
 
 // --- Vertical slice completa ------------------------------------------------
@@ -50,10 +51,10 @@ server.tool(
   'add_use_case',
   'Genera un caso de uso completo (vertical slice hexagonal) en un dominio: puerto inbound/outbound, domain service, application service + interface + spec, adapter (TypeORM por defecto; SP opt-in con nombreSp), controller JSON:API + DTOs, entidad de dominio y TypeORM, catálogos de error, y los módulos del dominio. Escribe en src/<dominio>/ (carpeta siempre lowercase; las clases salen en PascalCase sin importar el case de "dominio"). ' +
     'MULTI-CASO: al añadir el 2º/3er caso al MISMO dominio, el MCP MERGEA ese caso en los módulos del dominio ya generados (controller, adapter, providers, tokens, forFeature) — tanto en greenfield como en refactor. En refactor NUNCA toca app.module (eso lo cablea el agente). ' +
-    'SP: con adapterType="sp" el wiring es quirúrgico — apunta el módulo al .sp.adapter y quita del forFeature SOLO la entidad de ese caso, preservando las de los casos TypeORM. ' +
+    'API EXTERNA: con adapterType="http" (apiExterna, rutaApi, metodoHttp) el caso consume una API con el fetch nativo y NO necesita base de datos, conexion ni motor; declara <API>_BASE_URL en config, Joi y .env.example. SP: con adapterType="sp" el wiring es quirúrgico — apunta el módulo al .sp.adapter y quita del forFeature SOLO la entidad de ese caso, preservando las de los casos TypeORM. ' +
     'INFRA (refactor): usa infraStyle="project" + infraRoot (p.ej. "common") para que los imports de infra apunten a la carpeta del proyecto; aun así, concilia a mano los NOMBRES de clase (ResponseJsonApiBase/GenericException de los templates vs los del proyecto).',
   addUseCaseSchema,
-  addUseCase
+  withKit({}, addUseCase)
 )
 
 // --- Aprendizajes por repo (consultivos; nunca cambian las reglas base) ----
@@ -89,7 +90,7 @@ server.tool(
   'add_authorization',
   'OPT-IN. Agrega la autorización del borde HTTP al servicio: puerto agnóstico IAuthorizationVerifier + adapter por defecto (API de autorización) + Guard GLOBAL, secure-by-default (todo endpoint protegido salvo @SkipAuthorization()) y FAIL-CLOSED (denegado o autorizador inalcanzable = 403). El agente DEBE PREGUNTAR al usuario si quiere activarla; nunca decide solo ni la omite en silencio. Se crea UNA vez por servicio en src/shared/authorization. Parchea ConfigurationVariables, el schema Joi, .env.example y app.module (la registra DESPUÉS de SecurityModule para que el rate limit corra primero). Idempotente.',
   addAuthorizationSchema,
-  addAuthorization
+  withKit({}, addAuthorization)
 )
 
 // --- Generación declarativa desde spec -------------------------------------
@@ -97,7 +98,7 @@ server.tool(
   'generate_from_spec',
   'Genera un módulo hexagonal a partir de un middleware.spec.yaml declarativo (agnóstico de dominio: module/entity/use_cases los define el usuario en el spec). Soporta casos de uso con N métodos por puerto (inbound/outbound). Con dryRun=true (default) valida el spec y devuelve el PLAN de generación (casos, métodos, archivos) SIN escribir disco; con dryRun=false genera el slice por cada caso reutilizando add_use_case. Respeta las reglas de get_rules.',
   generateFromSpecSchema,
-  generateFromSpec
+  withKit({ entry: true }, generateFromSpec)
 )
 
 // --- Inventario + auditoría de arquitectura --------------------------------
@@ -132,7 +133,7 @@ server.tool(
   'inspect_project',
   'Descubrimiento de SOLO LECTURA del proyecto destino (para el Flujo 2 refactor): detecta la convención de carpetas/case de dominios, la forma de la conexión TypeORM (forRoot por defecto vs conexiones nombradas, replication), la infraestructura transversal ya existente (JSON:API response, tipo de error, middleware, ConfigurationVariables) que debe REUSARSE, y los módulos presentes. Devuelve reglas a respetar antes de generar nada. No escribe.',
   inspectProjectSchema,
-  inspectProjectTool
+  withKit({ entry: true }, inspectProjectTool)
 )
 server.tool(
   'list_templates',

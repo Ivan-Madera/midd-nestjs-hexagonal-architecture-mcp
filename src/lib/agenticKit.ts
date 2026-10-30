@@ -179,3 +179,70 @@ export function installAgenticKit(opts: {
   ]
   return results
 }
+
+// --- automatic installation -------------------------------------------------------------------------
+//
+// Any tool that works on a repo makes sure the kit is there first, so the user never has to ask for it. The check
+// comes before the write: nothing is touched when the kit is already installed at this version, files the team
+// wrote itself are never replaced, and the models a team chose for the agents survive an update.
+
+export type KitEnsureState = 'installed' | 'updated' | 'present' | 'foreign' | 'failed'
+export type KitEnsureResult = { state: KitEnsureState; files: KitFileResult[]; detail?: string }
+
+const MANAGED_VERSION = /managed by midd-nestjs-hexagonal-architecture-mcp v(\S+)/
+const MODEL_LINE = /^model:\s*(\S+)\s*$/m
+
+const ROLE_OF_TARGET: Record<string, AgentRole> = {
+  '.kiro/agents/middleware-generator.md': 'orchestrator',
+  '.kiro/agents/middleware-gen-worker.md': 'worker',
+  '.kiro/agents/middleware-auditor.md': 'auditor'
+}
+
+/** Is the automatic installation on? `MIDD_NESTJS_AUTO_KIT=off` (or 0 / false / no) turns it off. */
+export function autoKitEnabled(env: NodeJS.ProcessEnv = process.env): boolean {
+  return !/^(off|0|false|no)$/i.test((env.MIDD_NESTJS_AUTO_KIT ?? '').trim())
+}
+
+export function ensureAgenticKit(projectRoot: string): KitEnsureResult {
+  const version = mcpVersion()
+  try {
+    const existing = AGENT_FILES.map((file) => {
+      const full = join(projectRoot, file.target)
+      if (!existsSync(full)) return { target: file.target, kind: 'missing' as const }
+      const text = readFileSync(full, 'utf8')
+      if (!text.includes(MANAGED_MARKER)) return { target: file.target, kind: 'foreign' as const }
+      return {
+        target: file.target,
+        kind: 'managed' as const,
+        version: MANAGED_VERSION.exec(text)?.[1],
+        model: MODEL_LINE.exec(text)?.[1]
+      }
+    })
+
+    // The three agents work as a set: a file from another kit with the same name is never mixed with ours.
+    const foreign = existing.filter((e) => e.kind === 'foreign')
+    if (foreign.length > 0) {
+      return { state: 'foreign', files: foreign.map((f) => ({ path: f.target, status: 'skipped-not-managed' as const })) }
+    }
+
+    const missing = existing.filter((e) => e.kind === 'missing')
+    const outdated = existing.filter((e) => e.kind === 'managed' && e.version !== version)
+    const agentsSection = join(projectRoot, 'AGENTS.md')
+    const hasSection = existsSync(agentsSection) && readFileSync(agentsSection, 'utf8').includes(AGENTS_BEGIN)
+    if (missing.length === 0 && outdated.length === 0 && hasSection) return { state: 'present', files: [] }
+
+    // Keep the models the team chose (the version marker is what says a file is out of date, not its content).
+    const models: ModelOverrides = {}
+    for (const e of existing) {
+      if (e.kind === 'managed' && e.model && /^[A-Za-z0-9][A-Za-z0-9._:-]{0,63}$/.test(e.model)) {
+        models[ROLE_OF_TARGET[e.target]] = e.model
+      }
+    }
+    const files = installAgenticKit({ projectRoot, overwrite: false, models })
+    const wroteAny = files.some((f) => f.status === 'created' || f.status === 'updated')
+    if (!wroteAny) return { state: 'present', files }
+    return { state: missing.length === AGENT_FILES.length ? 'installed' : 'updated', files }
+  } catch (err: any) {
+    return { state: 'failed', files: [], detail: String(err?.message ?? err) }
+  }
+}

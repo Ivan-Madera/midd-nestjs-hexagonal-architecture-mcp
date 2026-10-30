@@ -18,7 +18,7 @@ import assert from 'node:assert/strict'
 import http from 'node:http'
 import { createHash } from 'node:crypto'
 import { spawn, spawnSync } from 'node:child_process'
-import { existsSync, mkdirSync, readFileSync, readdirSync, rmSync, writeFileSync } from 'node:fs'
+import { existsSync, mkdirSync, readFileSync, readdirSync, rmSync, symlinkSync, unlinkSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 
@@ -107,7 +107,6 @@ description: Consulta de productos por SKU o codigo de barras
 stack: nestjs
 error_prefix: CATALOG
 connection:
-  name: Catalog
   engine: mssql
   style: named
 use_cases:
@@ -137,7 +136,6 @@ description: Existencias por almacen
 stack: nestjs
 error_prefix: INVENTORY
 connection:
-  name: Catalog
   engine: mssql
   style: named
 use_cases:
@@ -188,7 +186,7 @@ test('a generated NestJS service compiles, passes its own checks and serves its 
 
   try {
     await t.test('generate a service with two modules (stored procedure and TypeORM) and authorization', async () => {
-      await scaffoldService({ projectRoot: WORKSPACE, conexion: 'Catalog', motor: 'mssql', prefijoServicio: 'midd-catalog', prefijoError: 'CATALOG', overwrite: true })
+      await scaffoldService({ projectRoot: WORKSPACE, motor: 'mssql', prefijoApi: 'midd-catalog', prefijoError: 'CATALOG', overwrite: true })
       for (const [name, spec] of [['catalog', SPEC_CATALOG], ['inventory', SPEC_INVENTORY]]) {
         const specPath = join(WORKSPACE, `agentic/specs/${name}/input/specs/middleware.spec.yaml`)
         mkdirSync(join(specPath, '..'), { recursive: true })
@@ -220,6 +218,13 @@ test('a generated NestJS service compiles, passes its own checks and serves its 
         writeFileSync(hashFile, hash, 'utf8')
       }
       assert.ok(existsSync(join(WORKSPACE, 'node_modules/@nestjs/core/package.json')))
+    })
+
+    await t.test('nobody named the connection: it is named after the engine and both modules share it', () => {
+      const env = readFileSync(join(WORKSPACE, '.env.example'), 'utf8')
+      assert.match(env, /^DB_MSSQL_HOST=/m)
+      assert.doesNotMatch(env, /DB_MSSQL2_|DB_CATALOG_/)
+      assert.ok(existsSync(join(WORKSPACE, 'src/shared/infrastructure/database-context/mssql.database.mssql.module.ts')))
     })
 
     await t.test('banned dependencies are not even installed at the top level', () => {
@@ -351,7 +356,7 @@ test('a generated NestJS service compiles, passes its own checks and serves its 
     await t.test('area policy: wrong content type -> 415, other verbs -> 406, errors carry the correlation id', async () => {
       const wrongType = await request(port, `${API}/health`, { headers: { 'content-type': 'application/json' }, body: '{}' })
       assert.equal(wrongType.status, 415)
-      assert.equal(wrongType.json.errors[0].code, 'SERVICE-UNSUPPORTED_MEDIA_TYPE-0013')
+      assert.equal(wrongType.json.errors[0].code, 'SERVICE-UNSUPPORTED_MEDIA_TYPE-013')
       assert.ok(wrongType.json.meta.correlationId)
       assert.equal(wrongType.headers['cache-control'], 'no-store', 'rejections carry the security headers too')
 
@@ -367,11 +372,11 @@ test('a generated NestJS service compiles, passes its own checks and serves its 
     await t.test('authorization: protected endpoints answer 401 / 403 / 200, health does not', async () => {
       const none = await request(port, `${API}/probe/protected`, { headers: jsonApi(), body: '{}' })
       assert.equal(none.status, 401)
-      assert.equal(none.json.errors[0].code, 'SERVICE-UNAUTHORIZED-0020')
+      assert.equal(none.json.errors[0].code, 'SERVICE-UNAUTHORIZED-020')
 
       const bad = await request(port, `${API}/probe/protected`, { headers: jsonApi({ authorization: 'Bearer bad-token' }), body: '{}' })
       assert.equal(bad.status, 403)
-      assert.equal(bad.json.errors[0].code, 'SERVICE-FORBIDDEN-0021')
+      assert.equal(bad.json.errors[0].code, 'SERVICE-FORBIDDEN-021')
 
       const good = await request(port, `${API}/probe/protected`, { headers: jsonApi({ authorization: 'Bearer good-token' }), body: '{}' })
       assert.equal(good.status, 200)
@@ -382,7 +387,7 @@ test('a generated NestJS service compiles, passes its own checks and serves its 
       const body = JSON.stringify({ data: 'a'.repeat(2.5 * 1024 * 1024) })
       const big = await request(port, `${API}/health`, { headers: jsonApi({ 'content-length': String(Buffer.byteLength(body)) }), body })
       assert.equal(big.status, 413)
-      assert.equal(big.json.errors[0].code, 'SERVICE-PAYLOADTOOLARGE-0019')
+      assert.equal(big.json.errors[0].code, 'SERVICE-PAYLOADTOOLARGE-019')
       assert.ok(big.json.meta.correlationId)
     })
 
@@ -390,7 +395,7 @@ test('a generated NestJS service compiles, passes its own checks and serves its 
       const body = JSON.stringify({ data: 'a'.repeat(2.5 * 1024 * 1024) })
       const big = await request(port, `${API}/health`, { headers: jsonApi(), body }) // no content-length: sent chunked
       assert.equal(big.status, 413)
-      assert.equal(big.json.errors[0].code, 'SERVICE-PAYLOADTOOLARGE-0019', 'the second line of defense must answer like the first')
+      assert.equal(big.json.errors[0].code, 'SERVICE-PAYLOADTOOLARGE-019', 'the second line of defense must answer like the first')
       assert.equal(big.json.errors[0].title, 'Payload Too Large')
       assert.ok(big.json.meta.correlationId)
     })
@@ -398,7 +403,7 @@ test('a generated NestJS service compiles, passes its own checks and serves its 
     await t.test('a malformed JSON body is a 400 client error, not an internal error', async () => {
       const bad = await request(port, `${API}/health`, { headers: jsonApi(), body: '{ "data": ' })
       assert.equal(bad.status, 400)
-      assert.equal(bad.json.errors[0].code, 'SERVICE-BADREQUEST-0016')
+      assert.equal(bad.json.errors[0].code, 'SERVICE-BADREQUEST-016')
       assert.equal(bad.json.errors[0].title, 'Bad Request')
       assert.ok(bad.json.meta.correlationId)
     })
@@ -413,7 +418,195 @@ test('a generated NestJS service compiles, passes its own checks and serves its 
       }
       assert.ok(limited, `no 429 after ${statuses.length} requests: ${statuses.join(' ')}`)
       assert.equal(limited.headers['retry-after'], '5')
-      assert.equal(limited.json.errors[0].code, 'SERVICE-TOOMANYREQUESTS-0017')
+      assert.equal(limited.json.errors[0].code, 'SERVICE-TOOMANYREQUESTS-017')
+    })
+    await t.test('without any RL_* or CORS_ALLOWED_ORIGINS in the environment, Joi defaults protect the service', async () => {
+      const example = parseEnvExample(readFileSync(join(WORKSPACE, '.env.example'), 'utf8'))
+      const env = { ...process.env, ...example }
+      for (const key of Object.keys(env)) if (key === 'CORS_ALLOWED_ORIGINS' || key.startsWith('RL_')) delete env[key]
+      const bare = await freePort()
+      env.PORT = String(bare)
+      env.AUTHORIZATION_API_URL = `http://127.0.0.1:${authorizer.address().port}/authorization/v1`
+      const proc = spawn(process.execPath, ['dist/main.edge.js'], { cwd: WORKSPACE, env })
+      const log = []
+      proc.stdout.on('data', (d) => log.push(String(d)))
+      proc.stderr.on('data', (d) => log.push(String(d)))
+      try {
+        let up
+        for (let i = 0; i < 120 && !up; i++) {
+          try {
+            const res = await request(bare, `${API}/health`, { headers: jsonApi({ origin: 'https://anything.example.com' }), body: '{}' })
+            if (res.status === 200) up = res
+          } catch {
+            await new Promise((r) => setTimeout(r, 500))
+          }
+        }
+        assert.ok(up, `did not boot without the optional variables. Output:\n${tail(log.join(''))}`)
+        assert.equal(up.headers['access-control-allow-origin'], '*', "CORS_ALLOWED_ORIGINS falls back to '*'")
+        const body = JSON.stringify({ data: 'a'.repeat(2.5 * 1024 * 1024) })
+        const big = await request(bare, `${API}/health`, { headers: jsonApi(), body })
+        assert.equal(big.status, 413, 'the 2 MB json limit applies without RL_MAX_JSON_PAYLOAD_BYTES')
+        let limited
+        for (let i = 0; i < 200 && !limited; i++) {
+          const res = await request(bare, `${API}/health`, { headers: jsonApi(), body: '{}' })
+          if (res.status === 429) limited = res
+        }
+        assert.ok(limited, 'the default of 150 requests per window applies without RL_MAX_REQUESTS_PER_WINDOW')
+      } finally {
+        proc.kill('SIGKILL')
+      }
+    })
+    await t.test('a service with no database consumes an external API: it compiles, boots and talks to it with fetch', async () => {
+      const root = join(tmpdir(), 'midd-e2e-nodb')
+      rmSync(root, { recursive: true, force: true })
+      mkdirSync(root, { recursive: true })
+      const made = await scaffoldService({ projectRoot: root, motor: 'none', prefijoApi: 'midd-rates', prefijoError: 'RATES', overwrite: true })
+      assert.notEqual(made.isError, true, made.content[0].text)
+      assert.equal(existsSync(join(root, 'src/shared/infrastructure/database-context')) && readdirSync(join(root, 'src/shared/infrastructure/database-context')).some((f) => f.endsWith('.module.ts')), false)
+      const specPath = join(root, 'agentic/specs/rates/input/specs/middleware.spec.yaml')
+      mkdirSync(join(specPath, '..'), { recursive: true })
+      writeFileSync(
+        specPath,
+        [
+          'module: rates',
+          'entity: Rate',
+          'description: Tipo de cambio',
+          'stack: nestjs',
+          'error_prefix: RATES',
+          'use_cases:',
+          '  - name: RetrieveRate',
+          '    action: retrieveRate',
+          '    resource_type: rate',
+          '    adapter: http',
+          '    api: ExchangeRates',
+          '    methods:',
+          '      - { name: retrieveRate, request: RetrieveRateRequest, response: Rate, http: { method: GET, path: /rates } }',
+          '      - { name: convert, request: ConvertRequest, response: Conversion, http: { method: POST, path: /convert } }',
+          // a second case in the SAME domain with another entity: its entries must be added to the catalogs of the domain
+          '  - name: ListRates',
+          '    action: listRates',
+          '    resource_type: rate-list',
+          '    adapter: http',
+          '    api: ExchangeRates',
+          '    methods:',
+          '      - { name: listRates, request: ListRatesRequest, response: RateList, http: { method: GET, path: /rates/all } }',
+          'dtos:',
+          '  input: { currency: string }',
+          '  output: { currency: string, value: number }',
+          'business_rules: { none: true, rules: [] }',
+          'complexity: { level: 0, signals: [] }',
+          ''
+        ].join('\n')
+      )
+      const generated = await generateFromSpec({ projectRoot: root, specPath, mode: 'greenfield', dryRun: false, overwrite: false })
+      assert.notEqual(generated.isError, true, generated.content[0].text)
+      symlinkSync(join(WORKSPACE, 'node_modules'), join(root, 'node_modules'), 'junction') // same dependencies, no second install
+
+      // the external API, as a real HTTP server
+      const upstream = []
+      const fakeApi = http.createServer((req, res) => {
+        upstream.push({ method: req.method, url: req.url, correlation: req.headers['x-correlation-id'] })
+        res.setHeader('content-type', 'application/json')
+        if (req.url.startsWith('/rates/all')) return res.end(JSON.stringify({ currency: 'ALL', value: 1 }))
+        const currency = new URL(req.url, 'http://x').searchParams.get('currency')
+        if (currency === 'USD') return res.end(JSON.stringify({ currency: 'USD', value: 17.5 }))
+        if (currency === 'BOOM') {
+          res.statusCode = 500
+          return res.end('{"detail":"internal"}')
+        }
+        res.statusCode = 404
+        res.end('{}')
+      })
+      await new Promise((resolve) => fakeApi.listen(0, '127.0.0.1', resolve))
+      try {
+        const build = spawnSync('npm run build', { cwd: root, shell: true, encoding: 'utf8', timeout: 600000, env: { ...process.env, FORCE_COLOR: '0' } })
+        assert.equal(build.status, 0, 'build failed:\n' + tail(build.stdout + '\n' + build.stderr))
+        const bare = await freePort()
+        const proc = spawn(process.execPath, ['dist/main.js'], {
+          cwd: root,
+          // the base URL ends with a slash on purpose: it must not double
+          env: { ...process.env, PORT: String(bare), API_CONTEXT: 'midd-rates', EXCHANGE_RATES_BASE_URL: 'http://127.0.0.1:' + fakeApi.address().port + '/' }
+        })
+        const log = []
+        proc.stdout.on('data', (d) => log.push(String(d)))
+        proc.stderr.on('data', (d) => log.push(String(d)))
+        try {
+          let up
+          for (let i = 0; i < 120 && !up; i++) {
+            try {
+              up = await request(bare, '/midd-rates/api/v1/health', { headers: jsonApi(), body: '{}' })
+            } catch {
+              await new Promise((r) => setTimeout(r, 500))
+            }
+          }
+          assert.ok(up, 'the service without database did not boot. Output:\n' + tail(log.join('')))
+          assert.equal(up.status, 200)
+          const ask = (currency, extra = {}) =>
+            request(bare, '/midd-rates/api/v1/rates/retrieveRate', {
+              headers: jsonApi(extra),
+              body: JSON.stringify({ data: { type: 'rate', attributes: { currency } } })
+            })
+
+          const ok = await ask('USD', { 'x-correlation-id': 'trace-e2e-1' })
+          assert.equal(ok.status, 200, ok.raw)
+          assert.deepEqual(ok.json.data.attributes, { currency: 'USD', value: 17.5 }, 'the answer of the API reaches the client in the JSON:API envelope')
+          assert.equal(ok.json.data.type, 'rate')
+          assert.deepEqual(upstream[0], { method: 'GET', url: '/rates?currency=USD', correlation: 'trace-e2e-1' }, 'GET with the request as query string, the correlation id travels on')
+
+          const list = await request(bare, '/midd-rates/api/v1/rates/listRates', {
+            headers: jsonApi(),
+            body: JSON.stringify({ data: { type: 'rate-list', attributes: { currency: 'USD' } } })
+          })
+          assert.equal(list.status, 200, list.raw)
+          assert.deepEqual(list.json.data.attributes, { currency: 'ALL', value: 1 }, 'the second case of the domain works too')
+
+          const missing = await ask('NOPE')
+          assert.equal(missing.status, 404, 'a 404 of the API is "not found" for the domain')
+          assert.equal(missing.json.errors[0].code, 'RATES-RATE-002', 'application 001, domain 002: the first numbers of the prefix')
+
+          const broken = await ask('BOOM')
+          assert.equal(broken.status, 502, 'an error of the API is an upstream error, not a 500 of this service')
+          assert.equal(broken.json.errors[0].code, 'RATES-EXTERNALAPI-003')
+          assert.equal(broken.json.errors[0].title, 'External API error')
+          assert.ok(broken.json.meta.correlationId)
+        } finally {
+          proc.kill('SIGKILL')
+        }
+
+        // and when the API is not reachable at all, the answer is the same upstream error (nothing hangs or crashes)
+        await new Promise((resolve) => fakeApi.close(resolve))
+        const unreachable = await freePort()
+        const proc2 = spawn(process.execPath, ['dist/main.js'], {
+          cwd: root,
+          env: { ...process.env, PORT: String(unreachable), API_CONTEXT: 'midd-rates', EXCHANGE_RATES_BASE_URL: 'http://127.0.0.1:1' }
+        })
+        try {
+          let res
+          for (let i = 0; i < 120 && !res; i++) {
+            try {
+              res = await request(unreachable, '/midd-rates/api/v1/rates/retrieveRate', {
+                headers: jsonApi(),
+                body: JSON.stringify({ data: { type: 'rate', attributes: { currency: 'USD' } } })
+              })
+            } catch {
+              await new Promise((r) => setTimeout(r, 500))
+            }
+          }
+          assert.ok(res, 'the service did not boot')
+          assert.equal(res.status, 502)
+          assert.equal(res.json.errors[0].code, 'RATES-EXTERNALAPI-003')
+        } finally {
+          proc2.kill('SIGKILL')
+        }
+      } finally {
+        if (fakeApi.listening) await new Promise((resolve) => fakeApi.close(resolve))
+        try {
+          unlinkSync(join(root, 'node_modules')) // removes the link only, never what it points to
+        } catch {
+          /* nothing to remove */
+        }
+        rmSync(root, { recursive: true, force: true })
+      }
     })
   } finally {
     if (child && !child.killed) child.kill('SIGKILL')

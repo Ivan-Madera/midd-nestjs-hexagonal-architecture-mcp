@@ -1,3 +1,4 @@
+import type { AdapterType } from './adapters.js'
 /**
  * Inventario y auditoría de arquitectura (memoria por repo del MCP).
  *
@@ -33,7 +34,8 @@ function today(): string {
 
 export type UseCaseEntry = {
   name: string
-  adapter: 'typeorm' | 'sp'
+  adapter: AdapterType
+  api?: string
   methods: Array<{ name: string; request: string; response: string; sp?: string }>
 }
 

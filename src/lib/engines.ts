@@ -69,6 +69,12 @@ export const PROFILES: Record<Motor, EngineProfile> = {
   }
 }
 
+/** The answer "this service does not use a database": no connection of any engine is generated. */
+export const SIN_BASE_DE_DATOS = 'none' as const
+export type MotorChoice = Motor | typeof SIN_BASE_DE_DATOS
+export const isMotorChoice = (value: unknown): value is MotorChoice =>
+  value === SIN_BASE_DE_DATOS || (typeof value === 'string' && (MOTORES as readonly string[]).includes(value))
+
 export const isMotor = (value: unknown): value is Motor =>
   typeof value === 'string' && (MOTORES as readonly string[]).includes(value)
 

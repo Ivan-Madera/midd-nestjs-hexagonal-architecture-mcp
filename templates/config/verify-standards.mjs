@@ -231,9 +231,18 @@ const mandatoryEnv = [
 ]
 if (joiFile) {
   const joi = read(joiFile)
+  // Code only: a default that is mentioned in a comment (whole line or trailing) is not a default.
+  const joiCode = readCode(joiFile).split('\n').map(stripComment).join('\n')
   for (const key of mandatoryEnv) {
-    if (!new RegExp(`\\b${key}\\s*:\\s*Joi\\.`).test(joi))
+    if (!new RegExp(`\\b${key}\\s*:\\s*Joi\\.`).test(joiCode))
       addError('MISSING_ENV_VALIDATION', `${key} is not validated in the Joi schema (fail fast at boot).`, rel(joiFile))
+    // Everything but the context has an area default, so a missing variable never leaves the edge unprotected.
+    else if (key !== 'API_CONTEXT' && !new RegExp(`\\b${key}\\s*:\\s*Joi\\.[^\\n]*\\.default\\(`).test(joiCode))
+      addError(
+        'MISSING_ENV_DEFAULT',
+        `${key} has no .default(...) in the Joi schema: when it is not configured the service would run without that protection.`,
+        rel(joiFile)
+      )
   }
 } else if (main) {
   addError('MISSING_ENV_VALIDATION', 'No joiSchema.ts found: environment variables are not validated.')
@@ -592,6 +601,35 @@ for (const entry of existsSync(SRC) ? readdirSync(SRC) : []) {
   }
   if (!existsSync(diagram))
     addWarn('API_DOCS_MISSING', `Module "${entry}" has no flow diagram (src/${entry}/diagrams/${entry}.flow.mmd).`, `src/${entry}`)
+}
+// ───────────────────────────────────────────────────────────────────────────
+// 7. ERROR CODES: <PREFIX>-<SLUG>-<NNN>, a number from 001 to 999 that is a sequence per prefix. Two errors of the
+//    domain catalogs must never share a number under the same prefix (error), and the number has three digits (warning).
+// ------------------------------------------------------------------------------------------------
+const errorCatalogs = allFiles.filter((f) => /[\\/]core[\\/](domain|application)[\\/]errors[\\/][^\\/]+\.error\.ts$/.test(f))
+const seenErrorNumbers = new Map()
+for (const file of errorCatalogs) {
+  for (const m of readCode(file).matchAll(/code\s*:\s*'([A-Z][A-Z0-9_]*)-([A-Z][A-Z0-9_]*)-(\d+)'/g)) {
+    const prefix = m[1]
+    const digits = m[3]
+    const code = `${m[1]}-${m[2]}-${m[3]}`
+    const number = Number(digits)
+    if (number === 0) continue // the generic fallback entry of a catalog
+    if (digits.length !== 3 || number > 999)
+      addWarn('ERROR_CODE_FORMAT', `"${code}": the number must have three digits, from 001 to 999.`, rel(file))
+    const key = `${prefix}-${number}`
+    if (seenErrorNumbers.has(key))
+      addError('ERROR_CODE_DUPLICATE', `"${code}" repeats the number ${digits} of the prefix ${prefix}, already used in ${seenErrorNumbers.get(key)}. Each error takes the next free number.`, rel(file))
+    else seenErrorNumbers.set(key, rel(file))
+  }
+}
+// ───────────────────────────────────────────────────────────────────────────
+// 8. SECRETS: a real .env (credentials, URLs) must be ignored by git. .env.example is the one that is committed.
+// ------------------------------------------------------------------------------------------------
+if (existsSync(join(ROOT, '.env'))) {
+  const ignored = /^\/?\.env(\*|\.\*)?\s*$/m.test(read(join(ROOT, '.gitignore')))
+  if (!ignored)
+    addError('ENV_NOT_IGNORED', '.env exists but .gitignore does not ignore it: its credentials would be committed. Add a line ".env" to .gitignore.', '.gitignore')
 }
 // ───────────────────────────────────────────────────────────────────────────
 // Report

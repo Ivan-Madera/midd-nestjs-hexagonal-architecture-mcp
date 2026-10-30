@@ -15,7 +15,7 @@ async function generateService() {
   await scaffoldService({
     projectRoot,
     conexion: 'Catalog', motor: 'mssql',
-    prefijoServicio: 'midd-catalog',
+    prefijoApi: 'midd-catalog',
     prefijoError: 'CATALOG',
     overwrite: true
   })
@@ -225,7 +225,7 @@ const MUTATIONS = [
 test('generate_from_spec wires the SP of EVERY method (config + Joi + .env.example), not just the first', async () => {
   const projectRoot = mkdtempSync(join(tmpdir(), 'midd-spec-'))
   try {
-    await scaffoldService({ projectRoot, conexion: 'Catalog', motor: 'mssql', prefijoServicio: 'midd-catalog', prefijoError: 'CATALOG', overwrite: true })
+    await scaffoldService({ projectRoot, conexion: 'Catalog', motor: 'mssql', prefijoApi: 'midd-catalog', prefijoError: 'CATALOG', overwrite: true })
     const specPath = join(projectRoot, 'middleware.spec.yaml')
     writeFileSync(
       specPath,
@@ -288,7 +288,7 @@ test('generate_from_spec wires the SP of EVERY method (config + Joi + .env.examp
 test('generated application test uses a fixture built from dtos.input (not the placeholder the rules reject)', async () => {
   const projectRoot = mkdtempSync(join(tmpdir(), 'midd-fixture-'))
   try {
-    await scaffoldService({ projectRoot, conexion: 'Catalog', motor: 'mssql', prefijoServicio: 'svc', prefijoError: 'CATALOG', overwrite: true })
+    await scaffoldService({ projectRoot, conexion: 'Catalog', motor: 'mssql', prefijoApi: 'svc', prefijoError: 'CATALOG', overwrite: true })
     const specPath = join(projectRoot, 'middleware.spec.yaml')
     writeFileSync(
       specPath,

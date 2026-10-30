@@ -4,6 +4,7 @@ import { z } from 'zod'
 import { materializeTree } from '../lib/dataset.js'
 import { addImport, appendToArray } from '../lib/moduleMerge.js'
 import { learnDecision } from '../lib/learnings.js'
+import { ENV_SECTIONS, addEnvEntries } from '../lib/envFile.js'
 import * as s from '../lib/schemas.js'
 
 // ---------------------------------------------------------------------------
@@ -64,8 +65,7 @@ function patchJoiSchema(file: string): 'patched' | 'unchanged' | 'anchor-missing
 function patchEnvExample(file: string, apiUrl: string): 'patched' | 'unchanged' {
   const content = read(file)
   if (/^AUTHORIZATION_API_URL=/m.test(content)) return 'unchanged'
-  const separator = content === '' || content.endsWith('\n') ? '' : '\n'
-  write(file, `${content}${separator}AUTHORIZATION_API_URL=${apiUrl}\n`)
+  write(file, addEnvEntries(content, ENV_SECTIONS.authorization, [['AUTHORIZATION_API_URL', apiUrl]]))
   return 'patched'
 }
 
@@ -158,7 +158,7 @@ export async function addAuthorization(args: {
     '',
     'Behavior: every endpoint is protected by default (Bearer token checked against the authorization API).',
     'Mark a genuinely public endpoint with @SkipAuthorization(). It is FAIL-CLOSED: denied or unreachable = 403.',
-    'Set AUTHORIZATION_API_URL to the real value in the untracked .env.'
+    'AGENT: ask the user for the real AUTHORIZATION_API_URL and write it yourself in the untracked .env.'
   ]
     .filter((line) => line !== '')
     .join('\n')

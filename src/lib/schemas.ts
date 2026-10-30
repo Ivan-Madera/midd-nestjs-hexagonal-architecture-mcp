@@ -1,5 +1,6 @@
 import { z } from 'zod'
-import { MOTORES } from './engines.js'
+import { MOTORES, SIN_BASE_DE_DATOS } from './engines.js'
+import { ADAPTERS, HTTP_VERBS } from './adapters.js'
 
 /**
  * Inputs comunes a las herramientas. `projectRoot` es la raíz del servicio
@@ -43,25 +44,45 @@ export const accion = z
 
 export const prefijoError = z
   .string()
-  .describe('Prefijo de los códigos de error del servicio en MAYÚSCULAS, p.ej. "CATALOG".')
+  .describe(
+    'Prefijo de errores de la API en mayúsculas. Por ejemplo, CATALOG. Los errores quedarán como CATALOG-PRODUCTNOTFOUND-001; el número va de 001 a 999 y lo asigna el MCP en secuencia por prefijo.'
+  )
 
 export const conexion = z
   .string()
-  .regex(/^[A-Z][A-Za-z0-9]{0,47}$/, 'PascalCase, solo letras y numeros, p.ej. "Catalog".')
-  .describe('Nombre de la conexión TypeORM en PascalCase (sin el sufijo Connection), p.ej. "Catalog".')
+  .regex(/^[A-Z][A-Za-z0-9]{0,47}$/, 'PascalCase, solo letras y numeros, p.ej. "Mssql2".')
+  .optional()
+  .describe(
+    'OPCIONAL: no se le pregunta al usuario. Sin valor, la conexión se llama como su motor (Mssql, Postgres, Mysql): se reutiliza la única conexión de ese motor o se crea una nueva. Pásalo solo para una conexión ADICIONAL de un motor que ya tiene una (Mssql2, Mssql3; inspect_project dice cuál toca) y solo si el usuario la pide. En refactor NO lo pases: la conexión del proyecto se detecta y se reutiliza (solo si el proyecto tiene varias, indica cuál). PascalCase, sin el sufijo Connection.'
+  )
 
-export const prefijoServicio = z
+export const prefijoApi = z
   .string()
   .describe(
-    'Context of the service (kebab-case), e.g. "midd-catalog". It becomes API_CONTEXT, the global prefix, so endpoints are /<prefijoServicio>/api/v{N}/{resource}.'
+    'Prefijo de la API en kebab-case. Por ejemplo, midd-catalog. Los endpoints quedarán como /<prefijo>/api/v1/{recurso}. Se guarda como API_CONTEXT (prefijo global). Pregúntalo como "prefijo de la API", no como prefijo del servicio.'
   )
 
 export const adapterType = z
-  .enum(['typeorm', 'sp'])
+  .enum(ADAPTERS)
   .default('typeorm')
   .describe(
-    'Tipo de acceso a datos. "typeorm" por defecto. "sp" (stored procedure) es OPT-IN: requiere nombreSp.'
+    'Tipo de acceso a datos. "typeorm" por defecto. "sp" (stored procedure) es OPT-IN: requiere nombreSp. "http" consume una API externa con fetch nativo y NO usa base de datos: requiere apiExterna y rutaApi (y no necesita conexion ni motor).'
   )
+export const apiExterna = z
+  .string()
+  .regex(/^[A-Z][A-Za-z0-9]{0,47}$/, 'PascalCase, solo letras y numeros, p.ej. "ExchangeRates".')
+  .optional()
+  .describe(
+    'Solo adapterType="http": nombre PascalCase de la API externa, p.ej. "ExchangeRates". Su URL base vive en la variable de entorno <NOMBRE>_BASE_URL (EXCHANGE_RATES_BASE_URL), validada con Joi al arrancar.'
+  )
+export const rutaApi = z
+  .string()
+  .optional()
+  .describe('Solo adapterType="http": ruta del endpoint de la API externa que llama el metodo, empieza con "/", sin query string, p.ej. "/rates".')
+export const metodoHttp = z
+  .enum(HTTP_VERBS)
+  .optional()
+  .describe('Solo adapterType="http": verbo de la llamada. GET (default) envia la request como query string; POST y PUT la envian como cuerpo JSON.')
 
 export const nombreSp = z
   .string()
@@ -111,12 +132,18 @@ export const infraRoot = z
   )
 
 export const motor = z
-  .enum(MOTORES)
+  .enum([...MOTORES, SIN_BASE_DE_DATOS])
   .describe(
-    'Motor de base de datos de la conexión: mssql (SQL Server), postgres (PostgreSQL) o mysql (MySQL). SIEMPRE se le pregunta al usuario: no hay default. Define el tipo de TypeORM, el driver, el puerto y la sintaxis de los stored procedures.'
+    'Motor de base de datos: mssql (SQL Server), postgres (PostgreSQL) o mysql (MySQL), o "none" si el servicio NO usa base de datos (no se crea ninguna conexión, ni módulo, ni variables, ni driver). SIEMPRE se le pregunta al usuario: no hay default. Define el tipo de TypeORM, el driver, el puerto y la sintaxis de los stored procedures.'
+  )
+export const crearConexion = z
+  .boolean()
+  .default(false)
+  .describe(
+    'SOLO refactor, y SOLO si el usuario pidio EXPRESAMENTE crear una conexion. Un refactor reutiliza la conexion que el proyecto ya tiene y, si no tiene ninguna, NO crea una por su cuenta. Con true el MCP crea la conexion completa, nombrada por el motor, asi que tambien hay que pasar el motor (se le pregunta al usuario si no lo dijo).'
   )
 export const motorOpcional = motor
   .optional()
   .describe(
-    'Motor de la conexión. OBLIGATORIO si la conexión es nueva (el MCP la crea completa); se ignora si ya existe, y si no coincide con el motor existente se rechaza. Valores: mssql | postgres | mysql.'
+    'Motor de la conexión. Greenfield: obligatorio si la conexión es nueva (el MCP la crea completa); "none" = sin base de datos (rechaza adapters TypeORM/SP). Refactor: solo se pasa, junto con "conexion", cuando el usuario pidió EXPRESAMENTE crear una conexión que el proyecto no tiene; si no, se reutiliza la del proyecto y el motor se ignora. Valores: mssql | postgres | mysql | none.'
   )

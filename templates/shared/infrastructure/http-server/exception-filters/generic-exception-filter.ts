@@ -18,7 +18,7 @@ const BODY_PARSER_ERRORS = new Map<string, { status: HttpStatus; code: string; t
     'entity.too.large',
     {
       status: HttpStatus.PAYLOAD_TOO_LARGE,
-      code: 'SERVICE-PAYLOADTOOLARGE-0019',
+      code: 'SERVICE-PAYLOADTOOLARGE-019',
       title: 'Payload Too Large',
       detail: 'The request body exceeds the maximum allowed size.',
       suggestedActions: 'Send a smaller body.'
@@ -28,7 +28,7 @@ const BODY_PARSER_ERRORS = new Map<string, { status: HttpStatus; code: string; t
     'entity.parse.failed',
     {
       status: HttpStatus.BAD_REQUEST,
-      code: 'SERVICE-BADREQUEST-0016',
+      code: 'SERVICE-BADREQUEST-016',
       title: 'Bad Request',
       detail: 'The request body is not valid JSON.',
       suggestedActions: 'Ensure that the data format is correct and follows the API documentation.'
@@ -58,7 +58,7 @@ export class AllExceptionsFilter implements ExceptionFilter {
       details = 'The requested resource was not found on the server.'
       suggestedAction = `Ensure that the URL '${url}' is correct.`
       title = 'Resource not found'
-      code = 'SERVICE-RESOURCENOTFOUND-0015'
+      code = 'SERVICE-RESOURCENOTFOUND-015'
 
       errorResponse = new ErrorResponse({
         code,
@@ -81,7 +81,7 @@ export class AllExceptionsFilter implements ExceptionFilter {
       suggestedAction =
         'Ensure that the data format is correct and follows the API documentation.'
       title = 'Bad Request'
-      code = 'SERVICE-BADREQUEST-0016'
+      code = 'SERVICE-BADREQUEST-016'
 
       errorResponse = new ErrorResponse({
         code,

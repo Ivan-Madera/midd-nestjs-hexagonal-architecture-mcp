@@ -1,6 +1,7 @@
 import { existsSync, mkdirSync, readFileSync, readdirSync, statSync, writeFileSync } from 'node:fs'
 import { dirname, join, relative, resolve } from 'node:path'
 import { listConnections } from './connections.js'
+import type { AdapterType } from './adapters.js'
 import type { Motor } from './engines.js'
 
 /**
@@ -29,7 +30,9 @@ export type EndpointDoc = {
   controllerClass: string
   applicationClass?: string
   adapterClass?: string
-  adapterKind?: 'typeorm' | 'sp'
+  adapterKind?: AdapterType
+  /** adapter http: the external API this endpoint calls (read from the adapter) */
+  upstream?: { api: string; verb: string; path: string }
   applicationMethod?: string
   requestFields: FieldDoc[]
   responseFields: FieldDoc[]
@@ -41,6 +44,8 @@ export type ModuleDoc = {
   endpoints: EndpointDoc[]
   errors: ErrorDoc[]
   connection?: { name: string; motor?: Motor }
+  /** names of the external APIs the module consumes (http adapters) */
+  externalApis: string[]
 }
 export type ServiceDoc = {
   context: string
@@ -193,7 +198,7 @@ function errorsOf(moduleDir: string): ErrorDoc[] {
     const starts = [...text.matchAll(/code:\s*'([^']+)'/g)]
     starts.forEach((m, index) => {
       const code = m[1]
-      if (!code || /-0000$/.test(code) || code.includes('<')) return
+      if (!code || /-0{3,4}$/.test(code) || code.includes('<')) return
       const segment = text.slice(m.index ?? 0, starts[index + 1]?.index ?? text.length)
       const title = /title:\s*'((?:[^'\\]|\\.)*)'/.exec(segment)?.[1]
       const status = /status:\s*(\d+)/.exec(segment)?.[1]
@@ -203,13 +208,25 @@ function errorsOf(moduleDir: string): ErrorDoc[] {
   return [...found.values()].sort((a, b) => a.code.localeCompare(b.code))
 }
 
-function adapterOf(moduleDir: string, caseSlug: string): { cls?: string; kind?: 'typeorm' | 'sp' } {
+function adapterOf(moduleDir: string, caseSlug: string): { cls?: string; kind?: AdapterType; upstream?: EndpointDoc['upstream'] } {
   const adapters = join(moduleDir, 'infrastructure', 'adapters')
   const sp = join(adapters, `${caseSlug}.sp.adapter.ts`)
   const orm = join(adapters, `${caseSlug}.typeorm.adapter.ts`)
   const moduleText = walk(join(moduleDir, 'infrastructure'), (f) => f.endsWith('.module.ts'))
     .map((f) => stripComments(read(f)))
     .join('\n')
+  // An external API adapter: the API name and the first call (the principal method) are read from its code.
+  const httpFile = join(adapters, `${caseSlug}.http.adapter.ts`)
+  if (existsSync(httpFile) && (moduleText.includes(`${caseSlug}.http.adapter`) || (!existsSync(sp) && !existsSync(orm)))) {
+    const text = stripComments(read(httpFile))
+    const api = /externalApis\.(\w+)\.baseUrl/.exec(text)?.[1]
+    const call = /this\.http\.(get|post|put)\(\s*this\.url\('([^']*)'\)/.exec(text)
+    return {
+      cls: classNameOf(text),
+      kind: 'http',
+      upstream: api && call ? { api, verb: call[1].toUpperCase(), path: call[2] } : undefined
+    }
+  }
   // The SP adapter wins only when the module is wired to it (both files can exist after a switch).
   if (existsSync(sp) && (moduleText.includes(`${caseSlug}.sp.adapter`) || !existsSync(orm)))
     return { cls: classNameOf(read(sp)), kind: 'sp' }
@@ -271,6 +288,7 @@ export function scanService(projectRoot: string): ServiceDoc {
             applicationClass,
             adapterClass: adapter.cls,
             adapterKind: adapter.kind,
+            upstream: adapter.upstream,
             applicationMethod,
             requestFields: bodyType ? requestFieldsOf(file, text, bodyType) : [],
             responseFields: response.fields,
@@ -280,7 +298,15 @@ export function scanService(projectRoot: string): ServiceDoc {
         }
       }
       if (endpoints.length === 0) continue
-      modules.push({ module: entry, endpoints, errors: errorsOf(moduleDir), connection: connectionOf(moduleDir, projectRoot) })
+      // A module that only consumes external APIs has no database, so it has no connection to report.
+      const readsDatabase = endpoints.some((e) => e.adapterKind !== 'http')
+      modules.push({
+        module: entry,
+        endpoints,
+        errors: errorsOf(moduleDir),
+        connection: readsDatabase ? connectionOf(moduleDir, projectRoot) : undefined,
+        externalApis: [...new Set(endpoints.flatMap((e) => (e.upstream ? [e.upstream.api] : [])))]
+      })
     }
   }
   const appModule = stripComments(read(join(src, 'app.module.ts')))
@@ -309,7 +335,7 @@ function sampleBody(e: EndpointDoc): string {
   return JSON.stringify({ data: { type: e.resourceType, attributes } }, null, 2)
 }
 
-const dbCall = (motor: Motor | undefined, kind: 'typeorm' | 'sp' | undefined): string => {
+const dbCall = (motor: Motor | undefined, kind: AdapterType | undefined): string => {
   if (kind !== 'sp') return 'Query via TypeORM'
   if (motor === 'postgres') return 'SELECT * FROM stored function'
   if (motor === 'mysql') return 'CALL stored procedure'
@@ -329,9 +355,12 @@ export function renderSequence(service: ServiceDoc, m: ModuleDoc): string {
     L.push(`    participant A${i} as ${label(e.applicationClass ?? 'Application service')}`)
     L.push(`    participant R${i} as ${label(e.adapterClass ?? 'Repository adapter')}`)
   })
-  L.push(`    participant D as DB ${label(db)}`)
+  const readsDatabase = m.endpoints.some((e) => e.adapterKind !== 'http')
+  const callsApi = m.endpoints.some((e) => e.adapterKind === 'http')
+  if (readsDatabase) L.push(`    participant D as DB ${label(db)}`)
+  if (callsApi) L.push(`    participant E as External API ${label(m.externalApis.join(' '))}`)
   m.endpoints.forEach((e, i) => {
-    L.push(`    Note over C,D: POST ${label(urlOf(service, e))}`)
+    L.push(`    Note over C,${readsDatabase ? 'D' : 'E'}: POST ${label(urlOf(service, e))}`)
     L.push(`    C->>G: POST ${label(urlOf(service, e))}`)
     L.push('    alt rate limit exceeded')
     L.push('        G-->>C: 429 Too Many Requests')
@@ -343,8 +372,13 @@ export function renderSequence(service: ServiceDoc, m: ModuleDoc): string {
     L.push(`        G->>X${i}: JSON:API request`)
     L.push(`        X${i}->>A${i}: ${label(e.applicationMethod ?? e.handler)} attributes`)
     L.push(`        A${i}->>R${i}: ${label(e.applicationMethod ?? e.handler)} data`)
-    L.push(`        R${i}->>D: ${dbCall(m.connection?.motor, e.adapterKind)}`)
-    L.push(`        D-->>R${i}: result`)
+    if (e.adapterKind === 'http') {
+      L.push(`        R${i}->>E: ${label(e.upstream ? `${e.upstream.verb} ${e.upstream.path}` : 'call the external API')}`)
+      L.push(`        E-->>R${i}: response`)
+    } else {
+      L.push(`        R${i}->>D: ${dbCall(m.connection?.motor, e.adapterKind)}`)
+      L.push(`        D-->>R${i}: result`)
+    }
     L.push(`        R${i}-->>A${i}: domain entity`)
     L.push(`        A${i}-->>X${i}: result`)
     L.push('        alt business error')
@@ -381,7 +415,7 @@ export function renderContract(service: ServiceDoc, m: ModuleDoc): string {
     const url = urlOf(service, e)
     L.push(`## POST ${url}`)
     L.push('')
-    L.push(`Handler: \`${e.controllerClass}.${e.handler}\`${e.applicationMethod ? ` -> \`${e.applicationMethod}\`` : ''}${e.public ? ' · publico (sin autorizacion)' : ''}`)
+    L.push(`Handler: \`${e.controllerClass}.${e.handler}\`${e.applicationMethod ? ` -> \`${e.applicationMethod}\`` : ''}${e.upstream ? ` · API externa ${e.upstream.api}: ${e.upstream.verb} ${e.upstream.path}` : ''}${e.public ? ' · publico (sin autorizacion)' : ''}`)
     L.push('')
     L.push('### Request (`data.attributes`)')
     L.push('')
@@ -418,13 +452,13 @@ export function renderContract(service: ServiceDoc, m: ModuleDoc): string {
   L.push('|---|---|---|')
   for (const e of m.errors) L.push(`| \`${e.code}\` | ${e.status} | ${e.title} |`)
   const common: Array<[string, number, string]> = [
-    ['SERVICE-BADREQUEST-0016', 400, 'Bad Request (JSON o DTO invalido)'],
-    ['SERVICE-UNSUPPORTED_MEDIA_TYPE-0013', 415, 'Content-Type distinto de application/vnd.api+json'],
-    ['SERVICE-PAYLOADTOOLARGE-0019', 413, 'Payload Too Large'],
-    ['SERVICE-TOOMANYREQUESTS-0017', 429, 'Too Many Requests (cabecera Retry-After)']
+    ['SERVICE-BADREQUEST-016', 400, 'Bad Request (JSON o DTO invalido)'],
+    ['SERVICE-UNSUPPORTED_MEDIA_TYPE-013', 415, 'Content-Type distinto de application/vnd.api+json'],
+    ['SERVICE-PAYLOADTOOLARGE-019', 413, 'Payload Too Large'],
+    ['SERVICE-TOOMANYREQUESTS-017', 429, 'Too Many Requests (cabecera Retry-After)']
   ]
   if (service.authorization) {
-    common.push(['SERVICE-UNAUTHORIZED-0020', 401, 'Sin token'], ['SERVICE-FORBIDDEN-0021', 403, 'No autorizado'])
+    common.push(['SERVICE-UNAUTHORIZED-020', 401, 'Sin token'], ['SERVICE-FORBIDDEN-021', 403, 'No autorizado'])
   }
   for (const [code, status, title] of common) L.push(`| \`${code}\` | ${status} | ${title} |`)
   L.push('')
@@ -540,7 +574,19 @@ export function renderArchitecture(service: ServiceDoc): string {
     L.push(`    service ${id}(server)[${label(m.module)}] in svc`)
     L.push(`    edge:R --> L:${id}`)
   }
+  const apiIds = new Map<string, string>()
   for (const m of service.modules) {
+    for (const api of m.externalApis) {
+      if (!apiIds.has(api)) {
+        const id = `api_${mermaidId(api)}`
+        apiIds.set(api, id)
+        L.push(`    service ${id}(internet)[${label(api)}]`)
+      }
+      L.push(`    m_${mermaidId(m.module)}:R --> L:${apiIds.get(api)}`)
+    }
+  }
+  for (const m of service.modules) {
+    if (!m.endpoints.some((e) => e.adapterKind !== 'http')) continue // only external APIs: no database
     const conn = m.connection
     const key = conn?.name ?? 'default'
     if (!dbIds.has(key)) {
@@ -552,6 +598,7 @@ export function renderArchitecture(service: ServiceDoc): string {
   }
   if (moduleIds.length >= 2) L.push(`    align column ${moduleIds.join(' ')}`)
   if (dbIds.size >= 2) L.push(`    align column ${[...dbIds.values()].join(' ')}`)
+  if (apiIds.size >= 2) L.push(`    align column ${[...apiIds.values()].join(' ')}`)
   L.push('```', '')
   L.push('> `architecture-beta` se dibuja con Mermaid 11.1 o superior; las lineas `align column` requieren 11.16 o superior (GitHub y Visual Studio recientes lo soportan).', '')
   L.push('## Endpoints', '')

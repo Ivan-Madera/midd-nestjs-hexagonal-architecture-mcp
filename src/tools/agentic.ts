@@ -68,7 +68,7 @@ export async function installAgenticKitTool(args: {
         'if one of them belongs to another kit (for example lib-midd-mcp-architecture), the pipeline would mix ' +
         'instructions from two different MCPs. Install with overwrite=true to replace them as a set, or remove ' +
         'the other kit first.'
-      : 'Done. Select the agent with /agent middleware-generator, or just ask for a middleware service. ' +
+      : 'Done. Select middleware-generator in the agent selector of the chat input bar (Kiro IDE) or with /agent middleware-generator (Kiro CLI). ' +
         'The worker and the auditor run behind the scenes; do not select them.',
     'Re-run this tool after upgrading the MCP to refresh the installed files (it is idempotent).'
   ].join('\n')

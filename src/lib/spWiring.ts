@@ -10,6 +10,7 @@
  */
 import { join } from 'node:path'
 import { existsSync, readFileSync, writeFileSync } from 'node:fs'
+import { ENV_SECTIONS, addEnvEntries } from './envFile.js'
 
 const read = (p: string) => (existsSync(p) ? readFileSync(p, 'utf8') : '')
 
@@ -46,13 +47,15 @@ function removeEntityFromForFeature(content: string, entityConfig: string): stri
   })
 }
 
-function patchDomainModules(opts: {
+export function patchDomainModules(opts: {
   projectRoot: string
   dominio: string
   caso: string // camelCase del caso (nombre de archivo del adapter)
   entidad?: string // PascalCase; para quitar SOLO su entidad del forFeature
+  adapter?: 'sp' | 'http' // a que adapter apuntan los modulos (sp por defecto)
 }): string[] {
   const { projectRoot, dominio, caso, entidad } = opts
+  const adapter = opts.adapter ?? 'sp'
   const patched: string[] = []
   const domLower = dominio.toLowerCase()
   const domRoot = join(projectRoot, 'src', domLower)
@@ -70,7 +73,7 @@ function patchDomainModules(opts: {
     // 1) import del adapter: .typeorm.adapter -> .sp.adapter (solo el de ESTE caso).
     content = content
       .split(`/adapters/${caso}.typeorm.adapter`)
-      .join(`/adapters/${caso}.sp.adapter`)
+      .join(`/adapters/${caso}.${adapter}.adapter`)
 
     // 2) quitar del forFeature SOLO la entidad de este caso SP, preservando las
     //    de otros casos TypeORM del mismo módulo. Si el forFeature se queda
@@ -133,8 +136,9 @@ function patchConfigurationVariables(opts: {
 }
 
 /** Añade la clave del SP al joiSchema.ts como string requerido. */
-function patchJoiSchema(opts: { projectRoot: string; envVarSp: string }): string | null {
+export function patchJoiSchema(opts: { projectRoot: string; envVarSp: string; rule?: string }): string | null {
   const { projectRoot, envVarSp } = opts
+  const rule = opts.rule ?? 'Joi.string().required()'
   const file = join(projectRoot, 'src/shared/infrastructure/config/joiSchema.ts')
   let content = read(file)
   if (!content) return null
@@ -155,7 +159,7 @@ function patchJoiSchema(opts: { projectRoot: string; envVarSp: string }): string
   const line = lastMatch[0]
   // Asegura coma al final de la última propiedad.
   const fixedLine = /,\s*$/.test(line) ? line : `${line.replace(/\s*$/, '')},`
-  const insertion = `\n  ${envVarSp}: Joi.string().required(),`
+  const insertion = `\n  ${envVarSp}: ${rule},`
   content = content.slice(0, lineStart) + fixedLine + insertion + content.slice(lineEnd)
   writeFileSync(file, content, 'utf8')
   return file
@@ -170,8 +174,12 @@ function patchEnvFiles(opts: { projectRoot: string; envVarSp: string }): string[
     const content = read(file)
     if (!content) continue
     if (new RegExp(`^${envVarSp}=`, 'm').test(content)) continue
-    const suffix = content.endsWith('\n') ? '' : '\n'
-    writeFileSync(file, `${content}${suffix}${envVarSp}=sp_Nombre_Del_Procedure\n`, 'utf8')
+    if (name === '.env.example') {
+      writeFileSync(file, addEnvEntries(content, ENV_SECTIONS.storedProcedures, [[envVarSp, 'sp_Nombre_Del_Procedure']]), 'utf8')
+    } else {
+      const suffix = content.endsWith('\n') ? '' : '\n'
+      writeFileSync(file, `${content}${suffix}${envVarSp}=sp_Nombre_Del_Procedure\n`, 'utf8')
+    }
     touched.push(file)
   }
   return touched

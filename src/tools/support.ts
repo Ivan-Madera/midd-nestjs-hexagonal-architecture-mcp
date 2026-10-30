@@ -4,6 +4,8 @@ import { existsSync, copyFileSync, mkdirSync } from 'node:fs'
 import { execFileSync } from 'node:child_process'
 import { datasetPath, listTemplateFiles, readTemplate } from '../lib/dataset.js'
 import { inspectProject } from '../lib/inspect.js'
+import { listConnections, nextConnectionName } from '../lib/connections.js'
+import { MOTORES } from '../lib/engines.js'
 import { learnVerifyRun } from '../lib/learnings.js'
 import * as s from '../lib/schemas.js'
 
@@ -84,6 +86,14 @@ export async function inspectProjectTool(a: { projectRoot: string }) {
     `  Conexión TypeORM: ${r.connection.style}` +
       (r.connection.usesReplication ? ' (replication)' : '') +
       (r.connection.namedConnections.length ? ` | nombradas: ${r.connection.namedConnections.join(', ')}` : '')
+  )
+  const mcpConnections = listConnections(a.projectRoot)
+  const takenNames = mcpConnections.map((c) => c.name)
+  lines.push(
+    `  Conexiones creadas por el MCP: ${mcpConnections.map((c) => `${c.name}${c.motor ? ` (${c.motor})` : ''}`).join(', ') || '(ninguna)'}`
+  )
+  lines.push(
+    `    Nombre que tomaria una conexion NUEVA de cada motor: ${MOTORES.map((m) => `${m} -> ${nextConnectionName(m, takenNames)}`).join(' | ')}`
   )
   lines.push('  Infra transversal existente (REUSAR, no duplicar):')
   const jsonApiClasses = r.existingInfra.jsonApiResponseClasses?.length

@@ -1,5 +1,7 @@
 import { z } from 'zod'
 import { loadAndValidateSpec, SpecValidationError, type MiddlewareSpec } from '../lib/spec.js'
+import { fillSpecConnection } from '../lib/connections.js'
+import { usesDatabase, type AdapterType, type HttpVerb } from '../lib/adapters.js'
 import { addUseCase } from './addUseCase.js'
 import { enrichPortMethods, type PortMethod } from '../lib/portMethods.js'
 import { applyDtoFields } from '../lib/dtoFields.js'
@@ -7,7 +9,7 @@ import { applyBusinessRules } from '../lib/businessRules.js'
 import { recordInventory } from '../lib/inventory.js'
 import { wireStoredProcedure } from '../lib/spWiring.js'
 import { deriveEnvVarSp } from '../lib/placeholders.js'
-import { PROFILES } from '../lib/engines.js'
+import { MOTORES, PROFILES } from '../lib/engines.js'
 import { refreshApiDocs } from '../lib/apiDocs.js'
 import * as s from '../lib/schemas.js'
 
@@ -40,23 +42,24 @@ export const generateFromSpecSchema = {
   overwrite: s.overwrite
 }
 
-type PlanMethod = { name: string; request: string; response: string; sp?: string }
+type PlanMethod = { name: string; request: string; response: string; sp?: string; http?: { method: HttpVerb; path: string } }
 type PlanCase = {
   useCase: string
   action: string
   resourceType: string
-  adapter: 'typeorm' | 'sp'
+  adapter: AdapterType
+  api?: string
   principalMethod: PlanMethod
   extraMethods: PlanMethod[]
   files: string[]
 }
 
 /** Archivos que el slice de un caso produce (rutas relativas a src/<module>/). */
-function slicePaths(spec: MiddlewareSpec, useCase: string, adapter: 'typeorm' | 'sp'): string[] {
+function slicePaths(spec: MiddlewareSpec, useCase: string, adapter: AdapterType): string[] {
   const dom = spec.module.toLowerCase()
   const Caso = useCase
   const caso = Caso.charAt(0).toLowerCase() + Caso.slice(1)
-  const adapterFile = adapter === 'sp' ? `${caso}.sp.adapter.ts` : `${caso}.typeorm.adapter.ts`
+  const adapterFile = `${caso}.${adapter}.adapter.ts`
   return [
     `src/${dom}/${dom}.module.ts`,
     `src/${dom}/core/${dom}.core.module.ts`,
@@ -81,6 +84,7 @@ function buildPlan(spec: MiddlewareSpec): PlanCase[] {
       action: uc.action,
       resourceType: uc.resourceType,
       adapter: uc.adapter,
+      api: uc.api,
       principalMethod: principal,
       extraMethods: extra,
       files: slicePaths(spec, uc.name, uc.adapter)
@@ -92,7 +96,8 @@ function renderPlan(spec: MiddlewareSpec, plan: PlanCase[], mode: string): strin
   const lines: string[] = []
   lines.push(`PLAN de generación (dryRun) — módulo "${spec.module}" (entity: ${spec.entity})`)
   lines.push(`  stack: ${spec.stack} | modo: ${mode} | complejidad declarada: ${spec.complexity.level}`)
-  lines.push(`  conexión: ${spec.connection.name} (${spec.connection.style}, ${PROFILES[spec.connection.engine].label}) | prefijo error: ${spec.errorPrefix}`)
+  if (!spec.useCases.some((uc) => usesDatabase(uc.adapter))) lines.push(`  conexión: ninguna (todos los casos consumen una API externa) | prefijo error: ${spec.errorPrefix}`)
+  else lines.push(`  conexión: ${spec.connection.name} (${spec.connection.style}, ${spec.connection.engine && spec.connection.engine !== 'none' ? PROFILES[spec.connection.engine].label : 'conexion del proyecto'}) | prefijo error: ${spec.errorPrefix}`)
   lines.push(`  carpeta destino: src/${spec.module.toLowerCase()}/`)
   if (spec.businessRules.none) lines.push('  reglas de negocio: ninguna (declarado explícitamente)')
   else {
@@ -102,7 +107,7 @@ function renderPlan(spec: MiddlewareSpec, plan: PlanCase[], mode: string): strin
   lines.push('')
   plan.forEach((pc, i) => {
     lines.push(`Caso ${i + 1}: ${pc.useCase}  (adapter: ${pc.adapter}, acción POST: ${pc.action}, type JSON:API: ${pc.resourceType})`)
-    lines.push(`  método principal: ${pc.principalMethod.name}(${pc.principalMethod.request}) : ${pc.principalMethod.response}` + (pc.principalMethod.sp ? ` [SP: ${pc.principalMethod.sp}]` : ''))
+    lines.push(`  método principal: ${pc.principalMethod.name}(${pc.principalMethod.request}) : ${pc.principalMethod.response}` + (pc.principalMethod.sp ? ` [SP: ${pc.principalMethod.sp}]` : '') + (pc.principalMethod.http ? ` [API ${pc.api}: ${pc.principalMethod.http.method} ${pc.principalMethod.http.path}]` : ''))
     if (pc.extraMethods.length) {
       lines.push(`  métodos adicionales del puerto (${pc.extraMethods.length}):`)
       for (const m of pc.extraMethods)
@@ -138,6 +143,35 @@ export async function generateFromSpec(a: {
     return { content: [{ type: 'text' as const, text: `ERROR: ${msg}` }], isError: true }
   }
 
+  // The spec does not need to name its connection: it is named after its engine. Read only, so a dry run
+  // already shows the name the real run will use.
+  const needsDb = spec.useCases.some((uc) => usesDatabase(uc.adapter))
+  if (needsDb && a.mode === 'greenfield' && spec.connection.style === 'named' && spec.connection.engine === 'none') {
+    return {
+      content: [
+        {
+          type: 'text' as const,
+          text: 'ERROR: el spec declara el servicio SIN base de datos (connection.engine: none), pero sus casos de uso usan adapters TypeORM o SP, que necesitan una conexion. Sin base de datos usa adapter: http (API externa) en los casos de uso; si ahora el servicio SI usa una base de datos, pregunta el motor (mssql | postgres | mysql).'
+        }
+      ],
+      isError: true
+    }
+  }
+  if (needsDb && a.mode === 'greenfield' && spec.connection.style === 'named' && !spec.connection.engine) {
+    return {
+      content: [
+        {
+          type: 'text' as const,
+          text: `ERROR: El middleware.spec no es valido:\n- connection.engine es obligatorio para crear la conexion: ${MOTORES.join(' | ')}. Se le pregunta al usuario; no hay default.`
+        }
+      ],
+      isError: true
+    }
+  }
+  const connectionProblem = needsDb ? fillSpecConnection(spec, a.projectRoot, a.mode) : undefined
+  if (connectionProblem) {
+    return { content: [{ type: 'text' as const, text: `ERROR: ${connectionProblem}` }], isError: true }
+  }
   // 2. Construir el plan.
   const plan = buildPlan(spec)
 
@@ -166,9 +200,13 @@ export async function generateFromSpec(a: {
       prefijoError: spec.errorPrefix,
       conexion: spec.connection.name,
       motor: spec.connection.engine,
+    crearConexion: spec.connection.create === true && a.mode === 'refactor',
       adapterType: pc.adapter,
       nombreSp: principal.sp,
       envVarSp: undefined,
+      apiExterna: pc.api,
+      rutaApi: principal.http?.path,
+      metodoHttp: principal.http?.method,
       mode: a.mode,
       connectionStyle: spec.connection.style,
       infraStyle: 'dataset',
@@ -192,7 +230,8 @@ export async function generateFromSpec(a: {
         name: m.name,
         request: m.request,
         response: m.response,
-        sp: m.sp
+        sp: m.sp,
+        http: m.http
       }))
       const enrich = enrichPortMethods({
         projectRoot: a.projectRoot,
@@ -293,11 +332,12 @@ export async function generateFromSpec(a: {
         entity: spec.entity,
         description: spec.description || undefined,
         stack: spec.stack,
-        connection: spec.connection,
+        connection: needsDb ? spec.connection : undefined,
         complexity: { level: spec.complexity.level, signals: spec.complexity.signals },
         useCases: spec.useCases.map((uc) => ({
           name: uc.name,
           adapter: uc.adapter,
+          api: uc.api,
           methods: uc.methods.map((m) => ({
             name: m.name,
             request: m.request,

@@ -11,14 +11,14 @@ type AuthorizationError = {
 // Never expose why the authorizer denied: only that access is not granted.
 export const AUTH_ERRORS: Record<'MISSING_TOKEN' | 'FORBIDDEN', AuthorizationError> = {
   MISSING_TOKEN: {
-    code: 'SERVICE-UNAUTHORIZED-0020',
+    code: 'SERVICE-UNAUTHORIZED-020',
     title: 'Missing authorization token',
     details: 'The request does not carry a Bearer token.',
     status: HttpStatus.UNAUTHORIZED,
     suggestedActions: 'Send the Authorization header with a valid Bearer token.'
   },
   FORBIDDEN: {
-    code: 'SERVICE-FORBIDDEN-0021',
+    code: 'SERVICE-FORBIDDEN-021',
     title: 'Access denied',
     details: 'The request is not authorized to access this resource.',
     status: HttpStatus.FORBIDDEN,

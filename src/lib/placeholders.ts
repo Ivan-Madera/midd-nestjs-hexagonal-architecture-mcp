@@ -1,3 +1,5 @@
+import { envVarApiBaseUrl, httpCallExpression, isHttpVerb } from './adapters.js'
+import { formatErrorNumber } from './errorCodes.js'
 /**
  * Sustitución de placeholders case-sensitive.
  *
@@ -43,13 +45,18 @@ export function buildPlaceholderMap(input: {
   tipoRecurso: string // kebab-case JSON:API, p.ej. "product"
   conexion: string // nombre de conexion TypeORM en PascalCase, p.ej. "Catalog"
   servicio?: string // prefijo del servicio para setGlobalPrefix, p.ej. "midd-catalog"
-  errorKey?: string // llave del catalogo, p.ej. "PRODUCT_NOT_FOUND_0001"
+  errorKey?: string // llave del catalogo, p.ej. "PRODUCT_NOT_FOUND"
+  errorNumApp?: number // numero (001-999) del error del catalogo de aplicacion; lo asigna la secuencia del prefijo
+  errorNumDom?: number // numero (001-999) del error del catalogo de dominio
   slug?: string // slug del codigo de error, p.ej. "PRODUCTNOTFOUND"
   attributes?: string // clase de attributes, por defecto `${caso}Attributes`
   respuesta?: string // tipo de retorno, por defecto = entidad
   request?: string // entidad request del método principal, por defecto `${caso}Request`
   nombreSp?: string // nombre del SP si adapterType === 'sp'
   envVarSp?: string // nombre de la env var del SP, p.ej. "RETRIEVE_PRODUCT_SP"
+  apiExterna?: string // adapter http: nombre PascalCase de la API externa, p.ej. "ExchangeRates"
+  rutaApi?: string // adapter http: ruta del metodo principal en la API externa, p.ej. "/rates"
+  metodoHttp?: string // adapter http: GET | POST | PUT (GET por defecto)
   connectionStyle?: 'named' | 'default' // forma de la conexión TypeORM del proyecto
   infraStyle?: 'dataset' | 'project' // capa de infra transversal de los imports
   infraRoot?: string // carpeta de infra propia (project), por defecto "common"
@@ -77,10 +84,14 @@ export function buildPlaceholderMap(input: {
   // una entidad de dominio tipada (p.ej. RetrieveLockTypeTvRequest), nunca un
   // `string` suelto. Por defecto <Caso>Request.
   const request = input.request ?? `${input.caso}Request`
-  const errorKey = input.errorKey ?? `${upperSnake(input.entidad)}_ERROR_0001`
+  const errorKey = input.errorKey ?? `${upperSnake(input.entidad)}_ERROR`
   const slug = input.slug ?? input.entidad.toUpperCase()
   const nombreSp = input.nombreSp ?? input.caso
   const envVarSp = input.envVarSp ?? deriveEnvVarSp(nombreSp)
+  // External API (adapter http): its base URL lives in <NAME>_BASE_URL and the call is built once, for the template.
+  const apiExterna = input.apiExterna ?? 'ExternalApi'
+  const verbo = (input.metodoHttp ?? 'GET').toUpperCase()
+  const llamadaHttp = httpCallExpression(isHttpVerb(verbo) ? verbo : 'GET', input.rutaApi ?? `/${input.accion}`)
   const servicio = input.servicio ?? camel(dominioClase)
   // Argumento de conexión para @InjectRepository/forFeature: named añade el
   // segundo arg "'<Conexion>Connection'"; default lo omite (conexión por defecto).
@@ -116,6 +127,9 @@ export function buildPlaceholderMap(input: {
     __ERROR_KEY__: errorKey,
     __NombreSp__: nombreSp,
     __ENV_VAR_SP__: envVarSp,
+    __ApiExterna__: apiExterna,
+    __ENV_VAR_API__: envVarApiBaseUrl(apiExterna),
+    __HTTP_CALL__: llamadaHttp,
     // Nombre de conexion como identificador (clase/archivo) y camel (archivo)
     __Conexion__: input.conexion,
     __conexion__: camel(input.conexion),
@@ -128,6 +142,8 @@ export function buildPlaceholderMap(input: {
     '<servicio>': servicio,
     '<PREFIJO>': input.prefijoError,
     '<SLUG>': slug,
+    '<ERR_NUM_APP>': formatErrorNumber(input.errorNumApp ?? 1),
+    '<ERR_NUM_DOM>': formatErrorNumber(input.errorNumDom ?? 1),
     '<ruta-dominio>': input.rutaDominio,
     '<tipo-recurso>': input.tipoRecurso,
     // Carpeta de infra transversal en los imports (shared | common | ...).

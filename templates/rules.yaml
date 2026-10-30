@@ -156,8 +156,13 @@ acceso_datos:
   sp_es_opt_in: true            # Stored Procedure requiere adapterType='sp' + nombreSp explícito
   motores: [mssql, postgres, mysql]
   reglas:
+    - "Un caso de uso puede leer de una BASE DE DATOS (adapter typeorm o sp) o consumir una API EXTERNA (adapter http). El adapter http usa el fetch nativo vía consumoHttp (nunca axios), NO necesita conexión ni motor y es lo habitual cuando el servicio no usa base de datos."
+    - "Adapter http: la URL base de cada API vive en <NOMBRE>_BASE_URL (ConfigurationVariables.externalApis + Joi .uri().required() + sección External APIs de .env.example), el verbo y la ruta son detalle del adapter (GET envía la request como query string; POST/PUT como cuerpo JSON) y el puerto de dominio solo ve data. Un 404 de la API es null (lo decide el application service); no alcanzar la API, un timeout o cualquier otro error HTTP lanza EXTERNAL_API_ERROR del catálogo (502). Las credenciales, si la API las pide, salen de ConfigurationVariables, nunca del código."
+    - "Si en una API nueva el usuario responde que NO usa base de datos (motor none), no se genera ninguna conexión, ni módulo de BD, ni variables DB_*, ni driver; los adapters TypeORM y SP quedan rechazados hasta que se indique un motor."
+    - "REFACTOR: la conexión del proyecto se reutiliza. Si el proyecto no tiene ninguna, el MCP NO crea una; solo si el usuario la pide expresamente (crearConexion=true / connection.create) se pregunta el motor y se procede a crearla."
     - "El motor de BD se PREGUNTA siempre en una API nueva (mssql | postgres | mysql); nunca se asume. Define driver, opciones de TypeORM y dialecto del SP."
     - "Variables de BD por conexión: DB_<CONEXION>_HOST/PORT/USERNAME/PASSWORD/NAME. El driver va en dependencies (el Dockerfile instala con --omit=dev)."
+    - "El nombre de la conexión NO se pregunta: sale del motor (Mssql, Postgres, Mysql) y se reutiliza la del motor si ya existe. Una conexión ADICIONAL del mismo motor se numera (Mssql2, Mssql3; variables DB_MSSQL2_*) y solo la crea el usuario al pedirla."
     - "Cada conexión adicional se crea completa (módulo, opciones, variables, Joi, .env.example). Un motor distinto al de una conexión existente se rechaza."
     - "Las entidades se cargan con autoLoadEntities: true; el módulo de cada dominio las declara con TypeOrmModule.forFeature([...], '<Conexion>Connection')."
     - "El SP se invoca según el dialecto: mssql EXEC, mysql CALL, postgres SELECT * FROM fn($1..) (solo funciones; los procedimientos CALL de Postgres no están soportados). El adapter SP inyecta el servicio de SU conexión."
@@ -214,19 +219,20 @@ reglas_negocio:
     if (!lockType?.LockTypeId) {
       throw new GenericException(
         `No hay un tipo de bloqueo definido para este IMEI ${data.imei}.`,
-        { code: 'ENROLLMENT-LOCKTYPENOTFOUND-0011', title: 'Tipo de bloqueo no encontrado.', status: 404, suggestedActions: 'Valide que los parámetros enviados sean correctos.' }
+        { code: 'ENROLLMENT-LOCKTYPENOTFOUND-011', title: 'Tipo de bloqueo no encontrado.', status: 404, suggestedActions: 'Valide que los parámetros enviados sean correctos.' }
       )
     }
 
 # ─── Catálogo de errores ────────────────────────────────────────────────────
 errores:
-  formato_codigo: "<PREFIJO>-<SLUG>-<NNNN>"   # p.ej. ENROLLMENT-LOCKTYPENOTFOUND-0011
+  formato_codigo: "<PREFIJO>-<SLUG>-<NNN>"    # p.ej. ENROLLMENT-LOCKTYPENOTFOUND-011; NNN va de 001 a 999
   campos: [code, title, status, suggestedActions]
   campos_opcionales: [message]                 # 'message' con plantillas {param} en errores de dominio
   dominio_vs_aplicacion:
     dominio: "core/domain/errors/<dominio>.domain.error.ts — errores de reglas del dominio"
     aplicacion: "core/application/errors/<dominio>.application.error.ts — errores de validación/orquestación de aplicación"
   lanzamiento: "GenericException(message, errorObject) en core; CustomHttpException en el controller (capa HTTP)."
+  numeracion: "El número va de 001 a 999 y es una secuencia POR PREFIJO: cada error que crea el MCP toma el siguiente libre (se lee del código, no hay contador aparte), así dos errores nunca comparten número. El verificador falla con ERROR_CODE_DUPLICATE y avisa con ERROR_CODE_FORMAT. Los códigos de la capa compartida (SERVICE-...-013 a 021) son del área y no entran en la secuencia de un prefijo propio."
 
 # ─── Controller / HTTP ──────────────────────────────────────────────────────
 http:
@@ -291,7 +297,7 @@ seguridad:
     multi_instancia: "El estado es en memoria por instancia. Si el servicio corre en varias réplicas, respaldar con un store compartido (p.ej. Redis) para que los contadores sean consistentes."
   env:
     - ".env.example sincronizado con el schema Joi (toda clave del schema presente). Se genera desde el Joi, incluyendo los .default()."
-    - "Variables obligatorias en Joi: API_CONTEXT, CORS_ALLOWED_ORIGINS (default '*'), RL_MAX_REQUESTS_PER_WINDOW, RL_WINDOW_SECONDS, RL_MAX_CONCURRENT_PER_IP, RL_MAX_PAYLOAD_BYTES, RL_MAX_JSON_PAYLOAD_BYTES, RL_CACHE_TTL_MS, RL_CACHE_MAX_ENTRIES, RL_TRUSTED_PROXIES."
+    - "Variables obligatorias en Joi (todas menos API_CONTEXT con .default(...) del área, así una variable sin configurar nunca deja el borde sin protección; MISSING_ENV_DEFAULT lo exige): API_CONTEXT, CORS_ALLOWED_ORIGINS (default '*'), RL_MAX_REQUESTS_PER_WINDOW, RL_WINDOW_SECONDS, RL_MAX_CONCURRENT_PER_IP, RL_MAX_PAYLOAD_BYTES, RL_MAX_JSON_PAYLOAD_BYTES, RL_CACHE_TTL_MS, RL_CACHE_MAX_ENTRIES, RL_TRUSTED_PROXIES."
     - "Nunca commitear secretos reales; .env.example solo con placeholders."
     - "Nada lee process.env fuera de ConfigurationVariables (ENV_DIRECT). Los valores se leen de forma perezosa dentro de registerAs, después de que ConfigModule cargó y validó el .env."
   logs:
@@ -311,7 +317,7 @@ autorizacion:
     - "SECURE-BY-DEFAULT: todo endpoint está protegido salvo que se marque @SkipAuthorization() (opt-OUT). Una omisión nunca deja un hueco. Solo para endpoints genuinamente públicos (health, webhooks entrantes); jamás sobre un controller de dominio completo para 'simplificar'."
     - "FAIL-CLOSED: si el autorizador deniega O no responde, se rechaza con 403. No existe camino fail-open (AUTHORIZATION_FAIL_OPEN lo bloquea)."
     - "ORDEN: AuthorizationModule se importa DESPUÉS de SecurityModule, para que el rate limit descarte una avalancha (429) sin gastar llamadas al autorizador (AUTHORIZATION_ORDER)."
-    - "Errores en el formato del área: SERVICE-UNAUTHORIZED-0020 (401) y SERVICE-FORBIDDEN-0021 (403). Nunca se expone el motivo ni la respuesta del autorizador."
+    - "Errores en el formato del área: SERVICE-UNAUTHORIZED-020 (401) y SERVICE-FORBIDDEN-021 (403). Nunca se expone el motivo ni la respuesta del autorizador."
     - "Config: AUTHORIZATION_API_URL requerida y validada en Joi (sin default seguro), solo si se activó la autorización."
 
 # ─── Aprendizaje por repo (CONSULTIVO: nunca cuestiona las reglas base) ─────
@@ -415,4 +421,4 @@ flujo:
   bucle_de_correccion: "verify_standards devuelve reglas con ID estable (CORS_WILDCARD, MISSING_CORRELATION_ID, ...). Si hay errores bloqueantes, el agente los corrige y vuelve a verificar hasta quedar en verde. El resultado final NO depende de qué tan bueno sea el modelo: lo estándar sale de plantillas y lo que se desvíe lo atrapa el verificador."
   todos: "Todo TODO que el MCP deje (reglas de negocio inferidas, columnas sin confirmar, valores faltantes) el agente DEBE avisarlo al usuario de forma explícita al terminar, listado archivo por archivo. Un TODO silencioso es un defecto."
   refactor: "inspect_project (descubrir convención real) -> mapear casos -> add_use_case mode=refactor -> mover lógica real -> reusar infra existente -> build + verify_standards -> record_architecture."
-  regla_refactor: "Adáptate a la convención del proyecto destino; reusa su infra; no dupliques; no toques módulos ajenos."
+  regla_refactor: "Adáptate a la convención del proyecto destino; reusa su infra; no dupliques; no toques módulos ajenos. La conexión TypeORM del proyecto (nombrada o la forRoot por defecto) se detecta y se REUTILIZA: no se pregunta su nombre ni su motor y el MCP no crea módulos ni variables de conexión. Solo si hay varias conexiones nombradas se indica cuál usa el caso."

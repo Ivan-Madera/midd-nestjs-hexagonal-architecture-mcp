@@ -74,7 +74,7 @@ export class RateLimitGuard implements CanActivate {
     if (window.count > this.limits.maxRequestsPerWindow) {
       res.setHeader('Retry-After', String(this.limits.windowSeconds))
       throw this.tooManyRequests(
-        'SERVICE-TOOMANYREQUESTS-0017',
+        'SERVICE-TOOMANYREQUESTS-017',
         'Too many requests',
         'The request rate limit for this IP was exceeded.',
         `Wait ${this.limits.windowSeconds} seconds before retrying.`
@@ -86,7 +86,7 @@ export class RateLimitGuard implements CanActivate {
     const slot = this.inFlight.get(ip) ?? { count: 0 }
     if (slot.count >= this.limits.maxConcurrentPerIp) {
       throw this.tooManyRequests(
-        'SERVICE-TOOMANYCONCURRENT-0018',
+        'SERVICE-TOOMANYCONCURRENT-018',
         'Too many concurrent requests',
         'The concurrent requests limit for this IP was exceeded.',
         'Wait for your in-flight requests to finish before sending more.'

@@ -42,5 +42,5 @@ test('regla no reconocible -> no inferida, andamiaje comentado', () => {
 test('el código de error usa el prefijo', () => {
   const g = buildGuard('nombre es requerido', 2, 'REGISTROS')
   assert.ok(g.snippet.includes("code: 'REGISTROS-"))
-  assert.ok(g.snippet.includes('-0003')) // index 2 -> 0003
+  assert.ok(g.snippet.includes('-003')) // index 2 -> 003
 })

@@ -1,3 +1,5 @@
+import type { AdapterType, HttpVerb } from './adapters.js'
+import { httpCallExpression } from './adapters.js'
 /**
  * Enriquecimiento de puertos inbound/outbound a N MÉTODOS.
  *
@@ -26,6 +28,7 @@ export type PortMethod = {
   request: string // PascalCase, entidad de dominio de entrada
   response: string // PascalCase, entidad de dominio de salida
   sp?: string // nombre del SP (si adapter=sp)
+  http?: { method: HttpVerb; path: string } // llamada a la API externa (si adapter=http)
 }
 
 export type EnrichResult = { patched: string[]; created: string[]; warnings: string[] }
@@ -112,7 +115,7 @@ function patchDomainService(file: string, caso: string, methods: PortMethod[]): 
 }
 
 // --- Adapter: <caso>.(sp|typeorm).adapter.ts --------------------------------
-function patchAdapter(file: string, methods: PortMethod[], adapterType: 'typeorm' | 'sp'): boolean {
+function patchAdapter(file: string, methods: PortMethod[], adapterType: AdapterType): boolean {
   let content = read(file)
   if (!content) return false
   const before = content
@@ -121,6 +124,17 @@ function patchAdapter(file: string, methods: PortMethod[], adapterType: 'typeorm
     content = addEntityImport(content, m.request, `${entitiesRel}/${m.request}.entity`)
     content = addEntityImport(content, m.response, `${entitiesRel}/${m.response}.entity`)
     if (new RegExp(`\\basync\\s+${m.name}\\s*\\(`).test(content)) continue
+    if (adapterType === 'http') {
+      // External API: same helpers as the principal method (url() joins the base URL, result() translates the answer).
+      const call = m.http ?? { method: 'GET' as HttpVerb, path: `/${m.name}` }
+      const impl =
+        `\n  async ${m.name}(data: ${m.request}): Promise<${m.response}> {\n` +
+        `    const response = await this.http.${httpCallExpression(call.method, call.path)}\n` +
+        `    return this.result(response, ${m.response})\n` +
+        `  }\n`
+      content = insertBeforeLastBrace(content, impl)
+      continue
+    }
     if (adapterType === 'sp') {
       // Hexagonal puro: el adapter resuelve el nombre del SP por
       // ConfigurationVariables; el método del puerto recibe solo `data`.
@@ -186,7 +200,7 @@ export function enrichPortMethods(opts: {
   projectRoot: string
   dominio: string
   caso: string
-  adapterType: 'typeorm' | 'sp'
+  adapterType: AdapterType
   methods: PortMethod[] // métodos a asegurar (adicionales; el principal ya está)
 }): EnrichResult {
   const { projectRoot, dominio, caso, adapterType, methods } = opts
@@ -219,7 +233,7 @@ export function enrichPortMethods(opts: {
   const domainSvc = join(base, `core/domain/services/${casoCamel}.domain.service.ts`)
   const adapterFile = join(
     base,
-    `infrastructure/adapters/${casoCamel}.${adapterType === 'sp' ? 'sp' : 'typeorm'}.adapter.ts`
+    `infrastructure/adapters/${casoCamel}.${adapterType}.adapter.ts`
   )
 
   const steps: Array<[string, () => boolean]> = [

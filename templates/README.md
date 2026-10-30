@@ -39,7 +39,7 @@ actualiza aquí (fuente única) y todos los servicios nuevos heredan el cambio.
   Ej.: `__caso__.application.ts`, `I__Caso__Service.ts`, `__dominio__.core.module.ts`.
 - **Dentro del contenido:** `__X__` para identificadores de código (clases, variables, imports) y
   `<X>` para texto/valores no-identificador (rutas, nombres de tabla, SP, prefijos). Ej.: la clase
-  `__Caso__ApplicationService` pero `@Controller('/<ruta-dominio>')` y `'<PREFIJO>-<SLUG>-0001'`.
+  `__Caso__ApplicationService` pero `@Controller('/<ruta-dominio>')` y `'<PREFIJO>-<SLUG>-<NNN>'`.
 
 Al materializar: **renombra los archivos** sustituyendo `__X__` y **reemplaza en el contenido** ambas
 formas. Después aplica Prettier y corre el build.
@@ -57,15 +57,19 @@ formas. Después aplica Prettier y corre el build.
 | `__ERROR_KEY__` / `__NombreSp__` | llave del catálogo / nombre SP en config | `NOT_FOUND_0048` / `GetLockTypePhone` |
 | `<Conexion>` | nombre de conexión TypeORM | `SoftCredito` |
 | `<PREFIJO>` / `<SLUG>` | prefijo y slug de códigos de error | `ENROLLMENT` / `NOTFOUND` |
+| `<ERR_NUM_APP>` / `<ERR_NUM_DOM>` | número (001-999) del error de aplicación / de dominio; lo asigna la secuencia del prefijo | `001` / `002` |
+| `__ApiExterna__` / `__ENV_VAR_API__` | adapter `http`: nombre de la API externa / variable de su URL base | `ExchangeRates` / `EXCHANGE_RATES_BASE_URL` |
+| `__HTTP_CALL__` | adapter `http`: la llamada completa (`get(this.url('/rates'), { params: ... })`, `post(...)`) | `get(this.url('/rates'), ...)` |
 | `<ruta-dominio>` / `<tipo-recurso>` | path kebab-case / type JSON:API | `enrollment-pfm` / `lock-type` |
 | `<nombre_tabla>` / `<columna>` | mapeo TypeORM | `sfc_ventas` / `vs_imei` |
 
 ## Elección de adapter en `_domain-slice/` (TypeORM por defecto; SP es OPT-IN explícito)
 
 El acceso a datos por defecto es **TypeORM**. El stored procedure NO se asume: el desarrollador debe
-**pedirlo explícitamente e indicar el nombre del SP**. Vienen dos adapters; usa UNO y borra el otro:
+**pedirlo explícitamente e indicar el nombre del SP**. Vienen tres adapters; usa UNO y borra los otros:
 - `__caso__.typeorm.adapter.ts` — repositorio TypeORM de entidad (**por defecto**, probado end-to-end).
 - `__caso__.sp.adapter.ts` — stored procedure vía `DatabaseCommonService` (**solo si el dev lo pide**).
+- `__caso__.http.adapter.ts` — API externa con el `fetch` nativo (`consumoHttp`); **no usa base de datos** (solo si el caso consume una API).
 
 Por defecto, `infrastructure.__dominio__.module.ts` y `__dominio__.module.ts` importan el `.typeorm`;
 borra el `.sp`.

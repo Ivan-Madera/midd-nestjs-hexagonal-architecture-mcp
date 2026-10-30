@@ -39,7 +39,7 @@ const learned = (root) => JSON.parse(read(root, LEARNINGS_FILE))
 const text = async (promise) => (await promise).content[0].text
 
 async function service(root, overrides = {}) {
-  await scaffoldService({ projectRoot: root, conexion: 'Catalog', motor: 'mssql', prefijoServicio: 'midd-catalog', prefijoError: 'CATALOG', overwrite: true })
+  await scaffoldService({ projectRoot: root, conexion: 'Catalog', motor: 'mssql', prefijoApi: 'midd-catalog', prefijoError: 'CATALOG', overwrite: true })
   await addUseCase({
     projectRoot: root, dominio: 'catalog', caso: 'RetrieveProduct', entidad: 'Product', metodo: 'retrieveBySku',
     param: 'sku', accion: 'retrieveProduct', prefijoError: 'CATALOG', conexion: 'Catalog', motor: 'mssql', adapterType: 'typeorm',

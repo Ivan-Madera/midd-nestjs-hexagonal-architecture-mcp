@@ -1,3 +1,4 @@
+import type { AdapterType } from './adapters.js'
 /**
  * Merge inteligente de los módulos de un dominio cuando se añade un caso de uso
  * adicional a un dominio YA existente.
@@ -25,7 +26,7 @@ export type CaseNames = {
   adapterImportPathFromRoot: string // p.ej. "./infrastructure/adapters/retrieveCategory.typeorm.adapter"
   controllerClass: string // p.ej. "RetrieveCategoryController"
   conexion: string // p.ej. "Catalog"
-  adapterType: 'typeorm' | 'sp'
+  adapterType: AdapterType
   connectionStyle: 'named' | 'default' // forma de la conexión TypeORM del proyecto
 }
 
@@ -124,6 +125,9 @@ function patchInfrastructureModule(file: string, n: CaseNames): boolean {
     `import { ${n.adapterClass} } from '${n.adapterImportPath}'`
   )
   if (n.adapterType === 'typeorm') {
+    // The first case of the domain may not have used TypeORM (stored procedure or external API): its wiring
+    // removed this import, and the forFeature below needs it.
+    content = addImport(content, "import { TypeOrmModule } from '@nestjs/typeorm'")
     content = addImport(
       content,
       `import { ${n.entidad}EntityConfiguration } from './sql-database/entities/${n.entidad}.entity'`

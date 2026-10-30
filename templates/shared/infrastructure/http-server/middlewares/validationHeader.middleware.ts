@@ -25,7 +25,7 @@ export class ValidationHeaderMiddleware implements NestMiddleware {
           title,
           details: detail,
           suggestedActions: suggestedAction,
-          code: 'SERVICE-UNSUPPORTED_MEDIA_TYPE-0013'
+          code: 'SERVICE-UNSUPPORTED_MEDIA_TYPE-013'
         },
         statusCode
       )
@@ -43,7 +43,7 @@ export class ValidationHeaderMiddleware implements NestMiddleware {
           title,
           details: detail,
           suggestedActions: suggestedAction,
-          code: 'SERVICE-NOT_ACCEPTABLE-0014'
+          code: 'SERVICE-NOT_ACCEPTABLE-014'
         },
         statusCode
       )

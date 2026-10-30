@@ -1,6 +1,8 @@
 import { z } from 'zod'
 import { recordInventory, writeAudit, type InventoryEntry } from '../lib/inventory.js'
 import { loadAndValidateSpec, SpecValidationError } from '../lib/spec.js'
+import { fillSpecConnectionAnyMode } from '../lib/connections.js'
+import { usesDatabase } from '../lib/adapters.js'
 import * as s from '../lib/schemas.js'
 import { refreshApiDocs } from '../lib/apiDocs.js'
 
@@ -35,18 +37,22 @@ export const recordArchitectureSchema = {
     .describe('Si true (default), escribe también docs/audits/<module>-<fecha>.md además del inventario.')
 }
 
-function entryFromSpec(specPath: string): Omit<InventoryEntry, 'mcpVersion' | 'generatedAt'> {
+function entryFromSpec(specPath: string, projectRoot: string): Omit<InventoryEntry, 'mcpVersion' | 'generatedAt'> {
   const spec = loadAndValidateSpec(specPath)
+  const needsDb = spec.useCases.some((uc) => usesDatabase(uc.adapter))
+  const problem = needsDb ? fillSpecConnectionAnyMode(spec, projectRoot) : undefined
+  if (problem) throw new SpecValidationError([problem])
   return {
     module: spec.module,
     entity: spec.entity,
     description: spec.description || undefined,
     stack: spec.stack,
-    connection: spec.connection,
+    connection: needsDb ? spec.connection : undefined,
     complexity: { level: spec.complexity.level, signals: spec.complexity.signals },
     useCases: spec.useCases.map((uc) => ({
       name: uc.name,
       adapter: uc.adapter,
+      api: uc.api,
       methods: uc.methods.map((m) => ({
         name: m.name,
         request: m.request,
@@ -68,7 +74,7 @@ export async function recordArchitecture(a: {
 }) {
   let entry: Omit<InventoryEntry, 'mcpVersion' | 'generatedAt'>
   try {
-    entry = entryFromSpec(a.specPath)
+    entry = entryFromSpec(a.specPath, a.projectRoot)
   } catch (err: any) {
     const msg = err instanceof SpecValidationError ? err.message : `Error al leer el spec: ${err.message}`
     return { content: [{ type: 'text' as const, text: `ERROR: ${msg}` }], isError: true }

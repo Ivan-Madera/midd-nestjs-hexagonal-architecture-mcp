@@ -101,20 +101,41 @@ Del requerimiento:
 Es correcto?
 ```
 
-### Fase 3 - Identidad del servicio (solo si es greenfield)
+### Fase 3 - Identidad de la API (solo si es greenfield)
 Pregunta lo que falte, con un default propuesto:
-- `prefijoServicio` (kebab-case): es el contexto de la URL `/{contexto}/api/v{N}/{recurso}`.
-- `connection.name` (PascalCase) y `connection.style` (`named` por defecto).
-- `connection.engine`: **motor de base de datos** (`mssql` | `postgres` | `mysql`). Pregunta SIEMPRE si la API es nueva;
+- `prefijoApi` (kebab-case): prefijo de la API. Por ejemplo, `midd-catalog`. Los endpoints quedaran como
+  `/<prefijo>/api/v1/{recurso}`. Preguntalo como "prefijo de la API", no como prefijo del servicio.
+- `connection.style` (`named` por defecto). **No preguntes el nombre de la conexion**: el MCP la nombra por su motor
+  (`Mssql`, `Postgres`, `Mysql`) y la reutiliza si ya existe. Deja `connection.name` fuera del spec.
+  Solo si el usuario pide una conexion ADICIONAL de un motor que el proyecto ya tiene, escribe `connection.name` con el
+  nombre que te indica `inspect_project` (`Mssql2`, `Mssql3`...). Una conexion adicional se pide solo si el usuario la quiere:
+  por defecto se reutiliza la del motor.
+  **Refactor:** el proyecto ya tiene su conexion. No preguntes ni el nombre ni el motor y deja `connection.name` y
+  `connection.engine` fuera del spec: el MCP la detecta y la reutiliza (no crea nada). Solo si el proyecto tiene varias
+  conexiones nombradas, pregunta cual usa este caso.
+  **Refactor sin conexion:** si el proyecto no tiene ninguna, el MCP NO la genera. Solo si el usuario pide expresamente una
+  conexion: pregunta el motor y, con su respuesta, usa `crearConexion=true` (o `connection.create: true` en el spec) junto con el
+  motor. Sin ese pedido expreso nunca pases el motor ni crees nada.
+- `connection.engine` (solo greenfield): **motor de base de datos** (`mssql` | `postgres` | `mysql`, o `none` si el usuario dice
+  que NO usa base de datos: entonces no se genera ninguna conexion). Pregunta SIEMPRE si la API es nueva;
   nunca lo asumas. Define el driver y la configuracion de TypeORM. Si el proyecto ya tiene la conexion, el motor sale de
   `inspect_project` y no se vuelve a preguntar (un motor distinto al existente se rechaza).
-- `error_prefix` (MAYUSCULAS): prefijo de los codigos de error. Default: el modulo en mayusculas.
+- `error_prefix` (MAYUSCULAS): prefijo de errores de la API. Por ejemplo, `CATALOG`. Los errores quedaran como
+  `CATALOG-PRODUCTNOTFOUND-001`; el numero va de 001 a 999 y lo asigna el MCP en secuencia por prefijo (no lo preguntes).
+  Default: el modulo en mayusculas.
 En un proyecto existente, toma estos valores del inventario o de `inspect_project`.
 Si `get_learnings` trae el contexto, los prefijos y las conexiones de este repo, propon esos valores y no repitas
 un prefijo de error que ya usa otro modulo.
 
 ### Fase 4 - Acceso a datos
-- Pregunta: **TypeORM o stored procedure?** El stored procedure es opt-in: nunca lo asumas. TypeORM es el default.
+- Pregunta de donde salen los datos de cada caso: **base de datos (TypeORM o stored procedure) o API externa?**
+  El stored procedure es opt-in: nunca lo asumas. TypeORM es el default para base de datos.
+- Si es **API externa** (`adapter: http`, lo habitual cuando el servicio no usa base de datos): pide el nombre de la API
+  (PascalCase, p.ej. `ExchangeRates`; su URL base va en `EXCHANGE_RATES_BASE_URL`, no la preguntes) y, por cada metodo, el
+  verbo (GET, POST o PUT) y la ruta (`/rates`). GET envia la request como query string; POST y PUT como cuerpo JSON.
+  Pregunta tambien si la API exige credenciales: el MCP deja un TODO en el adapter y tu lo avisas al final. Un caso de
+  API externa no necesita conexion ni motor; si TODOS los casos son de API externa, no preguntes el motor de base de datos.
+  El pedido de la API se lee del schema que te pase el usuario o de su documentacion; no inventes campos.
 - Si es stored procedure, pide el nombre real de cada SP (uno por metodo).
 - Pide el esquema (tabla o parametros del SP). Si lo pega, ES la fuente de verdad: no inventes columnas.
   Si no lo tiene, dejalo en `notes` como TODO y avisalo al final.
@@ -127,12 +148,14 @@ use_cases[]:
   name: {UseCase}              (PascalCase)
   action: {action}             (ruta del endpoint POST, camelCase)
   resource_type: {resource}    (type JSON:API, kebab-case)
-  adapter: typeorm | sp
+  adapter: typeorm | sp | http
+  api: {Api}                   (solo si adapter = http; PascalCase)
   methods[]:
     name: {metodo}             (camelCase)
     request: {Request}         (PascalCase, entidad de dominio)
     response: {Response}       (PascalCase, entidad de dominio)
     sp: {nombre}               (solo si adapter = sp; obligatorio en ese caso)
+    http: { method: GET | POST | PUT, path: /ruta }   (solo si adapter = http; obligatorio en ese caso)
 Es correcto?
 ```
 Un cambio de comportamiento segun un tipo de negocio se modela como metodos distintos, no pasando el nombre del SP.
@@ -190,6 +213,21 @@ Guarda las respuestas para la Fase 11.
    Si dijo si a Postman o a ARCHITECTURE.md, llama `generate_api_docs` con `postman=true` y/o `architecture=true` (una vez; desde ahi el MCP
    los mantiene al dia en cada `add_use_case`, `generate_from_spec` y `record_architecture`).
 4. Conserva la salida de estas herramientas: trae los AVISO y NOTA que el worker debe revisar.
+### Fase 11b - Entorno (lo haces tu: nunca le digas al usuario "corre npm install" ni "copia el .env")
+Dejas el servicio listo para correr con `shell` y tus herramientas de archivos. El usuario solo te da los valores.
+1. Pide, en UN solo mensaje, los valores reales que faltan y que listan las herramientas: host, puerto, usuario, contrasena y
+   nombre de la base de datos de cada conexion (`DB_<CONEXION>_*`), la URL base de cada API externa (`<API>_BASE_URL`) y
+   `AUTHORIZATION_API_URL` si hay autorizacion. Los de seguridad (CORS, `RL_*`) ya traen su valor por defecto: no los preguntes.
+2. Corre `npm install`.
+3. Crea `.env` con el contenido de `.env.example` usando tus herramientas de archivos (no `cp` ni `copy`: dependen del sistema)
+   y escribe los valores que te dio el usuario. Si `.env` ya existe, no lo pises: agrega solo las claves que falten.
+4. Antes de escribir valores reales comprueba que `.gitignore` ignora `.env` (el MCP lo genera; `verify_standards` falla con
+   `ENV_NOT_IGNORED` si no).
+5. Nunca repitas una contrasena ni un token en tus respuestas, en el reporte final ni en logs: refierete a ellos por el nombre de la
+   clave. Si el usuario prefiere no compartirlos en el chat, deja esa clave vacia en `.env` y dile exactamente cuales debe completar.
+6. Si tienes los valores reales de la base de datos, arranca el servicio en segundo plano, verifica
+   `POST /<prefijo>/api/v1/health` (Content-Type `application/vnd.api+json`) y detenlo. Si falla por la conexion, dilo claro:
+   es credencial o red, no el codigo.
 
 ## Orquestacion multi-modelo (tras bambalinas: el usuario sigue hablando solo contigo)
 

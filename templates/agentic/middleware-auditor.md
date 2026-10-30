@@ -61,7 +61,7 @@ Revisa como un experto:
   juicio. Un monolito que compila y pasa los tests sigue siendo FAIL.
 - **Stored procedures**: son opt-in; el nombre del SP no viaja por el puerto, lo resuelve el adapter desde la
   configuracion, y esta declarado en config, Joi y `.env.example`.
-- **Naming y errores** del canon: codigos `PREFIJO-SLUG-NNNN`, `GenericException` en el core,
+- **Naming y errores** del canon: codigos `PREFIJO-SLUG-NNN` (NNN de 001 a 999, sin repetir numero en el prefijo), `GenericException` en el core,
   `CustomHttpException` en el controller.
 
 ### 4. Pendientes (TODO y NOTA)
