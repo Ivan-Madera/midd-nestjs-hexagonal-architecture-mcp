@@ -1,6 +1,6 @@
 import { existsSync, readFileSync, writeFileSync } from 'node:fs'
 import { join } from 'node:path'
-import { formatErrorNumber, nextErrorNumbers } from './errorCodes.js'
+import { capitalize, entityText, formatErrorNumber, nextErrorNumbers } from './errorCodes.js'
 
 /**
  * Error catalog entries of a use case.
@@ -8,7 +8,7 @@ import { formatErrorNumber, nextErrorNumbers } from './errorCodes.js'
  * The FIRST case of a domain gets its entries from the domain slice (the catalog files are created with it). A later
  * case of the same domain finds those files already there, so its entries are added here. Without them the case
  * would point to a key its catalog does not have and the service would not compile. Each entry takes the next free
- * number of the prefix.
+ * number of the prefix, and its texts are written from the entity, in Spanish, like the ones of the domain slice.
  */
 const read = (p: string): string => (existsSync(p) ? readFileSync(p, 'utf8') : '')
 
@@ -31,9 +31,11 @@ export function ensureCaseErrors(opts: {
   prefix: string
   errorKey: string
   slug: string
+  entidad: string
 }): CaseErrorsResult {
-  const { projectRoot, dominio, prefix, errorKey, slug } = opts
+  const { projectRoot, dominio, prefix, errorKey, slug, entidad } = opts
   const domLower = dominio.toLowerCase()
+  const words = entityText(entidad)
   const patched: string[] = []
   const warnings: string[] = []
   const targets: Array<{ rel: string; build: (code: string) => string[] }> = [
@@ -42,9 +44,9 @@ export function ensureCaseErrors(opts: {
       build: (code) => [
         `  '${errorKey}': {`,
         `    code: '${code}',`,
-        "    title: 'Título legible del error de aplicación.',",
+        `    title: 'No se pudo procesar la solicitud de ${words}.',`,
         '    status: 400,',
-        "    suggestedActions: 'Acción sugerida para el consumidor del API.'",
+        "    suggestedActions: 'Revise la información enviada e intente nuevamente.'",
         '  },'
       ]
     },
@@ -52,11 +54,11 @@ export function ensureCaseErrors(opts: {
       rel: `src/${domLower}/core/domain/errors/${domLower}.domain.error.ts`,
       build: (code) => [
         `  '${errorKey}': {`,
-        "    message: 'Mensaje técnico con {placeholders} si aplica.',",
+        `    message: 'No se encontró ${words} con los parámetros enviados.',`,
         `    code: '${code}',`,
-        "    title: 'Título legible del error.',",
+        `    title: '${capitalize(words)} no encontrado.',`,
         '    status: 404,',
-        "    suggestedActions: 'Acción sugerida para el consumidor del API.'",
+        "    suggestedActions: 'Valide los parámetros enviados e intente nuevamente.'",
         '  },'
       ]
     }

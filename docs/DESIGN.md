@@ -143,11 +143,11 @@ exactamente los valores de su `.env.example` (si faltara una variable obligatori
 
 **Multi-motor de base de datos (mssql, postgres, mysql).** El agente pregunta el motor cuando la API es nueva y de la
 respuesta salen el driver, las opciones de TypeORM (módulo `<motor>.database.<conexion>.module.ts` y archivo de opciones)
-y el dialecto del stored procedure (mssql `EXEC`, mysql `CALL`, postgres `SELECT * FROM fn($1..)`). El motor es
+y el dialecto del stored procedure (mssql `EXEC`, mysql `CALL`; en PostgreSQL el área no los usa). El motor es
 obligatorio y nunca se asume: `motor` en `scaffold_service`, `connection.engine` en el spec, y en `add_use_case` solo
 cuando la conexión es nueva. Un motor distinto al de una conexión existente se rechaza; el modo refactor nunca crea
-conexiones. Variables por conexión: `DB_<CONEXION>_HOST/PORT/USERNAME/PASSWORD/NAME` (se aparta del canon
-`MSSQL_DATABASE_*`/`DATABASE_NAME` para poder tener varias conexiones; pendiente de confirmar con el equipo).
+conexiones. Variables por conexión: `DB_<NOMBRE>_HOST/PORT/USERNAME/PASSWORD/NAME`, donde `<NOMBRE>` es el nombre de la
+conexión, que sale del motor (`DB_MSSQL_HOST`, `DB_MSSQL2_HOST`). Confirmado con el equipo; se aparta del canon `MSSQL_DATABASE_*` para poder tener varias conexiones.
 - **El nombre de la conexión no se pregunta.** Sale del motor: `Mssql`, `Postgres`, `Mysql` (variables `DB_MSSQL_*`). Si el motor ya
   tiene una sola conexión, se reutiliza; si no hay, se crea; si hay varias del mismo motor y no se dice cuál, se rechaza con la lista.
   Una conexión ADICIONAL del mismo motor se numera (`Mssql2`, `Mssql3`): un sufijo con guion no sirve en nombres de clase ni de
@@ -195,6 +195,21 @@ conexiones. Variables por conexión: `DB_<CONEXION>_HOST/PORT/USERNAME/PASSWORD/
 - **El entorno lo prepara el agente.** Las notas de las herramientas están dirigidas al agente ("AGENTE: ..."): corre `npm install`, crea el `.env`
   a partir del `.env.example` con los valores que le da el usuario y no repite contraseñas. El MCP genera un `.gitignore` (nunca pisa el del proyecto)
   y `ENV_NOT_IGNORED` falla si existe un `.env` que git no ignora.
+- **Sin stored procedures en PostgreSQL (decisión del área).** `add_use_case` y `generate_from_spec` rechazan `adapterType: sp` sobre una conexión postgres, antes de escribir nada. El dialecto de Postgres quedó en el código pero ya no es alcanzable por las herramientas.
+- **Textos de error generados desde la entidad, en español.** Antes cada catálogo de error nacía con texto de plantilla ("Título legible del
+  error.") que nadie revisaba y llegaba tal cual a quien consume la API. Ahora el MCP escribe `message`, `title` y `suggestedActions` a partir de
+  la entidad (`LockType` -> "Lock type no encontrado.", "No se encontró lock type con los parámetros enviados."), también cuando un caso se
+  suma a un dominio que ya existe y para el error de API externa. Es una suposición razonable: la persona la corrige si no se apega al caso (el
+  género y la redacción pueden no encajar). El verificador avisa con `ERROR_CATALOG_PLACEHOLDER` si un catálogo conserva el texto de plantilla
+  (servicios generados antes).
+- **Cuántas preguntas hace el agente.** En una API nueva, tres momentos: (1) **un solo mensaje con lo general de la API**: prefijo de la API,
+  prefijo de errores, base de datos (mssql, postgres, mysql o ninguna), autorización, Postman y `ARCHITECTURE.md`; (2) **por caso de uso**:
+  "qué hace, qué recibe y qué devuelve", y de ahí el agente **deduce** si los datos salen de la base de datos (TypeORM), de una API externa o
+  de un stored procedure; solo pregunta el dato que falta de ESE caso (nombre, verbo y ruta de la API; nombre del SP); (3) los valores reales
+  del entorno, al preparar el servicio. No se pregunta: la conexión, los números de error, CORS, los límites de peticiones, el health, las
+  rutas, la complejidad (nivel 0 por defecto), las reglas de negocio que el usuario no mencionó (`none: true`) ni el esquema (queda como TODO).
+  Con "ninguna" base de datos, todos los casos son de API externa. Lo que se supone se lista como TODO al final. **No observado:** cuántas
+  preguntas hace de verdad con modelos reales; falta la primera prueba dentro de Kiro.
 - **Refactor sin conexión.** Si el proyecto no tiene ninguna, el MCP no la genera. Solo si el usuario la pide expresamente
   (`crearConexion=true`, o `connection.create: true` en el spec) se pregunta el motor y se crea completa, nombrada por el motor; pasar
   solo el motor no basta, para que un reflejo del agente no cree nada. El caso se avisa en el reporte porque el `app.module` es del proyecto.
@@ -209,7 +224,7 @@ conexiones. Variables por conexión: `DB_<CONEXION>_HOST/PORT/USERNAME/PASSWORD/
 - **Se mantiene del canon (observaciones de seguridad, no cambiadas):** `trustServerCertificate: true` en mssql y
   `logging: ['query']`.
 - **Límites honestos:** no se probó contra motores vivos. Los dialectos de postgres y mysql se prueban con un DataSource
-  falso (33 tests en `test/database.test.mjs`); en Postgres solo se soportan funciones, no procedimientos `CALL`.
+  falso (33 tests en `test/database.test.mjs`). En PostgreSQL no se usan stored procedures: el MCP rechaza `adapter: sp` sobre esa conexión.
 
 **Documentación de la API generada desde el código.** `generate_api_docs` lee los controllers, los DTOs y los catálogos
 de error del servicio y escribe, por módulo, el contrato `src/<modulo>/contracts/<modulo>.api.md` y un diagrama Mermaid

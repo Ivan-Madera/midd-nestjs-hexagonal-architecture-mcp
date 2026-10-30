@@ -63,6 +63,7 @@ export const HINTS: Record<string, string> = {
   HEALTH_NOT_PUBLIC: 'Mark the health probe with @SkipAuthorization() so it answers without a token.',
   MISSING_ENV_DEFAULT: 'Give CORS_ALLOWED_ORIGINS and every RL_* variable its area default with Joi .default(...) so an unset variable never disables the protection.',
   ENV_NOT_IGNORED: 'Add a line .env to .gitignore before putting real values in .env: credentials must never be committed.',
+  ERROR_CATALOG_PLACEHOLDER: 'An error catalog still has template text: write the real message, title and suggested action of each error.',
   ERROR_CODE_DUPLICATE: 'Two errors of the same prefix share a number: give the repeated one the next free number, from 001 to 999.',
   ERROR_CODE_FORMAT: 'An error code is PREFIX-SLUG-NNN with a three digit number from 001 to 999: rewrite the number.',
   API_DOCS_MISSING: 'Run generate_api_docs: it writes the contract and the flow diagram of every module from the code.',

@@ -1,10 +1,10 @@
 export const __Dominio__DomainError = {
   '__ERROR_KEY__': {
-    message: 'Mensaje técnico con {placeholders} si aplica.',
+    message: 'No se encontró <ENTIDAD_TXT> con los parámetros enviados.',
     code: '<PREFIJO>-<SLUG>-<ERR_NUM_DOM>',
-    title: 'Título legible del error.',
+    title: '<ENTIDAD_TXT_CAP> no encontrado.',
     status: 404,
-    suggestedActions: 'Acción sugerida para el consumidor del API.'
+    suggestedActions: 'Valide los parámetros enviados e intente nuevamente.'
   },
   default: {
     message: 'Mensaje genérico de fallo.',

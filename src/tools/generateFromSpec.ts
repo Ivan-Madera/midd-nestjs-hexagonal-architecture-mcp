@@ -172,6 +172,13 @@ export async function generateFromSpec(a: {
   if (connectionProblem) {
     return { content: [{ type: 'text' as const, text: `ERROR: ${connectionProblem}` }], isError: true }
   }
+  // The area does not use stored procedures on PostgreSQL.
+  if (spec.connection.engine === 'postgres') {
+    const sp = spec.useCases.filter((uc) => uc.adapter === 'sp').map((uc) => uc.name)
+    if (sp.length > 0) {
+      return { content: [{ type: 'text' as const, text: `ERROR: ${sp.join(', ')}: el area no usa stored procedures en PostgreSQL: usa adapterType="typeorm" para esa conexion (los stored procedures siguen disponibles en SQL Server y MySQL).` }], isError: true }
+    }
+  }
   // 2. Construir el plan.
   const plan = buildPlan(spec)
 

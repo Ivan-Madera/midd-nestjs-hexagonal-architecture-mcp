@@ -87,7 +87,7 @@ test('verify-standards fails when a real .env would reach git, and passes once i
 
 test('the agent is told to prepare the environment itself, and not to leak a password', () => {
   const agent = readFileSync(join(process.cwd(), 'templates/agentic/middleware-generator.md'), 'utf8')
-  assert.match(agent, /Fase 11b - Entorno/)
+  assert.match(agent, /Fase 6b - Entorno/)
   assert.match(agent, /nunca le digas al usuario "corre npm install" ni "copia el \.env"/)
   assert.match(agent, /Corre `npm install`/)
   assert.match(agent, /Crea `\.env` con el contenido de `\.env\.example`/)

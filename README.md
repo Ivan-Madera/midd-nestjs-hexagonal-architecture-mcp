@@ -178,12 +178,12 @@ flowchart LR
 
 ### Generación (greenfield)
 - `scaffold_service` siembra la **capa `shared` completa** (JSON:API, errores, logger, config + Joi, seguridad, health, utils), los archivos de **config/enforcement** (eslint, prettier, Dockerfile, verify-standards, hooks husky), `main.ts`, `app.module.ts`, un `.gitignore` que excluye `.env` (nunca pisa el del proyecto) y el `.env.example` por secciones derivado del joiSchema.
-- **Motor de base de datos:** el agente lo pregunta (`mssql`, `postgres`, `mysql`) y de la respuesta salen el driver, las opciones de TypeORM y el dialecto del stored procedure. Con `none` (el servicio no usa base de datos) no se genera ninguna conexión, módulo, variable `DB_*` ni driver.
+- **Motor de base de datos:** el agente lo pregunta (`mssql`, `postgres`, `mysql`) y de la respuesta salen el driver, las opciones de TypeORM y el dialecto del stored procedure (mssql `EXEC`, mysql `CALL`; **el área no usa stored procedures en PostgreSQL**, el MCP los rechaza). Con `none` (el servicio no usa base de datos) no se genera ninguna conexión, módulo, variable `DB_*` ni driver.
 - **Conexiones:** su nombre no se pregunta, sale del motor (`Mssql`, `Postgres`, `Mysql`); una adicional del mismo motor se numera (`Mssql2`, variables `DB_MSSQL2_*`).
 
 ### Vertical slice (greenfield y refactor)
 - `add_use_case` genera un caso completo: **puertos inbound/outbound**, domain/application services, adapter, controller JSON:API + DTOs, entidades de dominio, catálogos de error y los módulos del dominio.
-- **Tres adapters:** `typeorm` (por defecto), `sp` (stored procedure, opt-in) y `http` (**API externa** con el `fetch` nativo; no necesita base de datos ni conexión). El adapter `http` declara `<API>_BASE_URL` en la configuración, en Joi y en el `.env.example`, y traduce las respuestas (404 = no encontrado; error o API caída = 502 `EXTERNAL_API_ERROR`).
+- **Tres adapters:** `typeorm` (por defecto), `sp` (stored procedure, opt-in; no con PostgreSQL) y `http` (**API externa** con el `fetch` nativo; no necesita base de datos ni conexión). El adapter `http` declara `<API>_BASE_URL` en la configuración, en Joi y en el `.env.example`, y traduce las respuestas (404 = no encontrado; error o API caída = 502 `EXTERNAL_API_ERROR`).
 - **Multi-caso:** al añadir el 2º/3er caso al mismo dominio, **mergea** el caso en los módulos y catálogos existentes de forma idempotente.
 - **Refactor:** reutiliza la conexión que el proyecto ya tiene (se detecta; no se pregunta nombre ni motor). Si no tiene ninguna, el MCP **no crea una por su cuenta**: solo con pedido expreso (`crearConexion=true` + motor).
 
@@ -195,6 +195,9 @@ flowchart LR
 - **Autorización** opt-in (`add_authorization`): puerto agnóstico + Guard global, secure-by-default y fail-closed. El agente siempre pregunta.
 - Sin `axios` (se usa `fetch`) y sin `uuid` (se usa `crypto`).
 
+### Textos de los errores
+- El MCP escribe el `message`, el `title` y el `suggestedActions` de cada error **en español, a partir de la entidad** (`LockType` → "Lock type no encontrado.", "No se encontró lock type con los parámetros enviados."), también para un caso que se suma a un dominio existente y para el error de API externa. Es una suposición razonable: la persona la corrige si no se apega al caso. `verify_standards` avisa con `ERROR_CATALOG_PLACEHOLDER` si un catálogo conserva el texto de plantilla.
+
 ### Códigos de error
 - Formato `<PREFIJO>-<SLUG>-<NNN>`, por ejemplo `CATALOG-PRODUCTNOTFOUND-001`. El número va de 001 a 999 y es una secuencia **por prefijo** que asigna el MCP leyendo el código existente: dos errores nunca comparten número.
 
@@ -204,6 +207,14 @@ flowchart LR
 ### Verificación y descubrimiento
 - `verify_standards` corre el verificador del servicio generado con **reglas de ID estable**: naming, seguridad HTTP, correlation ID, `@Version`, `.env.example` y defaults de Joi, autorización, health, conexiones de BD, SP declarado, reglas de código (sin `console.log`, `process.env` directo, `any`, dinero como float, HTTP en el core...), dependencias prohibidas, documentación desactualizada, códigos de error repetidos y `.env` sin ignorar por git.
 - `inspect_project`: descubrimiento de **solo lectura** del proyecto destino (convención de carpetas, forma de la conexión TypeORM, infra transversal a reusar con sus **nombres de clase**, nombre que tomaría una conexión nueva).
+
+### Cuántas preguntas hace el agente
+En una API nueva, tres momentos:
+1. **Un solo mensaje con lo general de la API:** prefijo de la API, prefijo de errores, base de datos (mssql, postgres, mysql o ninguna), autorización, Postman y `ARCHITECTURE.md`.
+2. **Por caso de uso:** "qué hace, qué recibe y qué devuelve". De ahí el agente deduce si los datos salen de la base de datos, de una API externa o de un stored procedure, y solo pregunta el dato que falta de ese caso (nombre, verbo y ruta de la API; nombre del SP). Con "ninguna" base de datos, todos los casos son de API externa.
+3. **Los valores reales del entorno** (host, usuario, URLs), al preparar el servicio.
+
+No pregunta la conexión, los números de error, CORS, los límites de peticiones, el health, las rutas, la complejidad (nivel 0), el esquema ni reglas que no mencionaste: lo supone y lo lista como TODO al final.
 
 ### Memoria por repo y agentes
 - `record_architecture`: inventario `docs/architecture-inventory.json` (una entrada por módulo, **sin tocar las de otros**) + auditoría `docs/audits/<module>-<fecha>.md`.
@@ -433,7 +444,8 @@ npm run test:e2e # genera, instala, compila y arranca un servicio real (necesita
 | `test/inventory.test.mjs` | Envelope, agregar 2º módulo sin tocar el 1º, reemplazo de entrada, auditoría. |
 | `test/placeholders.test.mjs` | Derivación de case, `__Request__`, sustitución case-sensitive, `<ConexionArg>`. |
 | `test/scaffold.e2e.test.mjs` | Genera servicios y exige que `verify-standards` pase limpio; una mutación por cada regla bloqueante (seguridad, ruta, dependencias, autorización, health, SP). |
-| `test/database.test.mjs` | Motores (mssql, postgres, mysql): perfiles, dialecto de SP con un DataSource falso, conexiones adicionales, el motor es obligatorio. |
+| `test/database.test.mjs` | Motores (mssql, postgres, mysql): perfiles, dialecto de SP con un DataSource falso, conexiones adicionales, el motor es obligatorio. En PostgreSQL no se aceptan stored procedures. |
+| `test/errorTexts.test.mjs` | Textos de error en español desde la entidad (también al sumar un caso a un dominio existente y en el error de API externa) y aviso del verificador por texto de plantilla. |
 | `test/connectionName.test.mjs`, `test/noDatabase.test.mjs` | Nombre de la conexión por motor, reutilización, refactor (detecta, no crea sin pedido expreso) y servicio sin base de datos. |
 | `test/httpAdapter.test.mjs` | Adapter de API externa: cableado sin base de datos, verbos GET/POST/PUT, config/Joi/.env, mezcla con TypeORM, spec, refactor, documentación. |
 | `test/errorCodes.test.mjs` | Códigos `PREFIJO-SLUG-NNN`: secuencia por prefijo, 001-999, agotamiento, capa compartida de 3 dígitos y reglas del verificador. |
@@ -443,7 +455,7 @@ npm run test:e2e # genera, instala, compila y arranca un servicio real (necesita
 | `test/learnings.test.mjs` | Aprendizaje por repo: captura, saneamiento de texto hostil, y que el verificador no lo lee. |
 | `test/e2e/compile.e2e.mjs` | **End-to-end real** (`npm run test:e2e`): genera módulos (SP y TypeORM) + autorización, `npm install`, `npm run build`, tests y lint del servicio generado, `verify-standards`, y lo arranca para probarlo por HTTP (health, cabeceras, 401/403/200, 413, 400, 429, defaults de Joi sin variables). Además un servicio **sin base de datos** que consume una API externa falsa (200, 404, 502, API caída, propagación del correlation ID). |
 
-**Estado actual:** 213 tests rápidos y 25 comprobaciones end-to-end, todos en verde. Lo que **no** está probado: postgres y mysql contra motores vivos (solo con un DataSource falso), y la conversación del agente con modelos reales dentro de Kiro.
+**Estado actual:** 219 tests rápidos y 25 comprobaciones end-to-end, todos en verde. Lo que **no** está probado: postgres y mysql contra motores vivos (solo con un DataSource falso), y la conversación del agente con modelos reales dentro de Kiro.
 
 ---
 
@@ -491,7 +503,6 @@ npm run test:e2e # genera, instala, compila y arranca un servicio real (necesita
 - CI propio del MCP (lint + build + test en cada push).
 - Probar postgres y mysql contra motores vivos (hoy solo con un DataSource falso).
 - Autenticación en el adapter de API externa (hoy deja un TODO; las credenciales deben salir de `ConfigurationVariables`).
-- Textos de plantilla de los errores generados (`Título legible del error.`): rellenarlos desde la entidad y avisar con una regla del verificador.
 - Confirmar el formato vigente de los agentes de Kiro (`permissions` en lugar de `allowedTools`/`toolsSettings`) y migrarlos si hace falta.
 
 ---

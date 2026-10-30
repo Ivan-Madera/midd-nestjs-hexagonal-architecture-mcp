@@ -608,7 +608,11 @@ for (const entry of existsSync(SRC) ? readdirSync(SRC) : []) {
 // ------------------------------------------------------------------------------------------------
 const errorCatalogs = allFiles.filter((f) => /[\\/]core[\\/](domain|application)[\\/]errors[\\/][^\\/]+\.error\.ts$/.test(f))
 const seenErrorNumbers = new Map()
+// The MCP writes the texts of each error from its entity; a catalog that still has the old template text was never reviewed.
+const TEMPLATE_TEXT = /Título legible del error|Acción sugerida para el consumidor|Mensaje técnico con \{placeholders\}/
 for (const file of errorCatalogs) {
+  if (TEMPLATE_TEXT.test(readCode(file)))
+    addWarn('ERROR_CATALOG_PLACEHOLDER', 'The error catalog still has template text ("Título legible del error"...): write the real message, title and suggested action of each error.', rel(file))
   for (const m of readCode(file).matchAll(/code\s*:\s*'([A-Z][A-Z0-9_]*)-([A-Z][A-Z0-9_]*)-(\d+)'/g)) {
     const prefix = m[1]
     const digits = m[3]

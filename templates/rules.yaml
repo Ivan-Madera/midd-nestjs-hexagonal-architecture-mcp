@@ -161,11 +161,11 @@ acceso_datos:
     - "Si en una API nueva el usuario responde que NO usa base de datos (motor none), no se genera ninguna conexión, ni módulo de BD, ni variables DB_*, ni driver; los adapters TypeORM y SP quedan rechazados hasta que se indique un motor."
     - "REFACTOR: la conexión del proyecto se reutiliza. Si el proyecto no tiene ninguna, el MCP NO crea una; solo si el usuario la pide expresamente (crearConexion=true / connection.create) se pregunta el motor y se procede a crearla."
     - "El motor de BD se PREGUNTA siempre en una API nueva (mssql | postgres | mysql); nunca se asume. Define driver, opciones de TypeORM y dialecto del SP."
-    - "Variables de BD por conexión: DB_<CONEXION>_HOST/PORT/USERNAME/PASSWORD/NAME. El driver va en dependencies (el Dockerfile instala con --omit=dev)."
+    - "Variables de BD por conexión: DB_<NOMBRE>_HOST/PORT/USERNAME/PASSWORD/NAME, con NOMBRE el nombre de la conexión, que sale del motor (DB_MSSQL_HOST, DB_MSSQL2_HOST). El driver va en dependencies (el Dockerfile instala con --omit=dev)."
     - "El nombre de la conexión NO se pregunta: sale del motor (Mssql, Postgres, Mysql) y se reutiliza la del motor si ya existe. Una conexión ADICIONAL del mismo motor se numera (Mssql2, Mssql3; variables DB_MSSQL2_*) y solo la crea el usuario al pedirla."
     - "Cada conexión adicional se crea completa (módulo, opciones, variables, Joi, .env.example). Un motor distinto al de una conexión existente se rechaza."
     - "Las entidades se cargan con autoLoadEntities: true; el módulo de cada dominio las declara con TypeOrmModule.forFeature([...], '<Conexion>Connection')."
-    - "El SP se invoca según el dialecto: mssql EXEC, mysql CALL, postgres SELECT * FROM fn($1..) (solo funciones; los procedimientos CALL de Postgres no están soportados). El adapter SP inyecta el servicio de SU conexión."
+    - "El área NO usa stored procedures en PostgreSQL: en una conexión postgres solo se usa TypeORM y el MCP rechaza adapterType sp. Los SP se invocan según el dialecto: mssql EXEC, mysql CALL. El adapter SP inyecta el servicio de SU conexión."
     - "TypeORM es el default. Stored Procedure es opt-in explícito (nunca se asume)."
     - "El adapter SP ejecuta vía IdatabaseCommonService.executeStoredProcedure(sp, data, true) y mapea con Mapper(Clase, resultado)."
     - "Hexagonal puro: el adapter SP resuelve el nombre del SP desde ConfigurationVariables.storedProcedures.<Nombre> INTERNAMENTE. El nombre del SP NO viaja por el puerto (es infraestructura)."
@@ -232,6 +232,7 @@ errores:
     dominio: "core/domain/errors/<dominio>.domain.error.ts — errores de reglas del dominio"
     aplicacion: "core/application/errors/<dominio>.application.error.ts — errores de validación/orquestación de aplicación"
   lanzamiento: "GenericException(message, errorObject) en core; CustomHttpException en el controller (capa HTTP)."
+  textos: "El MCP escribe los textos de cada error (message, title, suggestedActions) en ESPAÑOL a partir de la entidad: '<Entidad> no encontrado.', 'No se encontró <entidad> con los parámetros enviados.'. Es una suposición razonable: la persona la corrige si no se apega al caso. El verificador avisa con ERROR_CATALOG_PLACEHOLDER si un catálogo conserva el texto de plantilla."
   numeracion: "El número va de 001 a 999 y es una secuencia POR PREFIJO: cada error que crea el MCP toma el siguiente libre (se lee del código, no hay contador aparte), así dos errores nunca comparten número. El verificador falla con ERROR_CODE_DUPLICATE y avisa con ERROR_CODE_FORMAT. Los códigos de la capa compartida (SERVICE-...-013 a 021) son del área y no entran en la secuencia de un prefijo propio."
 
 # ─── Controller / HTTP ──────────────────────────────────────────────────────

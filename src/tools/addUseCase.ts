@@ -123,6 +123,13 @@ export async function addUseCase(input: {
     return { content: [{ type: 'text' as const, text: `ERROR: ${choice.error}` }], isError: true }
   }
   args.conexion = choice.name
+  // The area does not use stored procedures on PostgreSQL. The engine is the one of the connection (or the one being created).
+  if (args.adapterType === 'sp') {
+    const connectionEngine = listConnections(args.projectRoot).find((c) => c.name === args.conexion)?.motor ?? engine
+    if (connectionEngine === 'postgres') {
+      return { content: [{ type: 'text' as const, text: 'ERROR: el area no usa stored procedures en PostgreSQL: usa adapterType="typeorm" para esa conexion (los stored procedures siguen disponibles en SQL Server y MySQL).' }], isError: true }
+    }
+  }
   // A NEW named connection is created complete (module, options, config, Joi, .env.example, AppModule, driver).
   // Nothing is assumed about its engine: the user is asked.
   const connectionNotes: string[] = []
@@ -242,7 +249,8 @@ export async function addUseCase(input: {
         dominio: args.dominio,
         prefix: args.prefijoError,
         errorKey: map['__ERROR_KEY__'],
-        slug: map['<SLUG>']
+        slug: map['<SLUG>'],
+        entidad: args.entidad
       })
       for (const f of errors.patched) mergeNotas.push(`Errores del caso agregados a ${f}`)
       for (const w of errors.warnings) mergeNotas.push(`AVISO: ${w}`)

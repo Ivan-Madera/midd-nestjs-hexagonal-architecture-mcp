@@ -11,6 +11,13 @@ import { join } from 'node:path'
 export const ERROR_CODE_MAX = 999
 export const ERROR_NUMBER_DIGITS = 3
 
+/** The words of an entity name: "LockType" -> "lock type". Used to write the error texts. */
+export const entityText = (entity: string): string =>
+  entity.replace(/([a-z0-9])([A-Z])/g, '$1 $2').replace(/([A-Z]+)([A-Z][a-z])/g, '$1 $2').toLowerCase()
+
+/** "lock type" -> "Lock type". */
+export const capitalize = (text: string): string => text.charAt(0).toUpperCase() + text.slice(1)
+
 /** 7 -> "007". */
 export const formatErrorNumber = (n: number): string => String(n).padStart(ERROR_NUMBER_DIGITS, '0')
 

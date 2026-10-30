@@ -46,7 +46,7 @@ PASO 0 — LEE LAS REGLAS: llama get_rules y apégate a ellas (estructura hexago
   puertos inbound/outbound multi-método, DTOs JSON:API, acceso a datos TypeORM/SP, catálogo de
   errores, seguridad, complejidad). Son la fuente de verdad del estilo del área (destilado del canon).
 
-PASO 1 — Pide al usuario estas variables (en un solo bloque) y espera su respuesta:
+PASO 1 — Pide al usuario estos datos GENERALES de la API (en un solo bloque, una sola vez) y espera su respuesta:
   Identidad de la API:
    - prefijoApi: prefijo de la API en kebab-case. Por ejemplo, midd-catalog. Los endpoints quedarán como /<prefijo>/api/v1/{recurso}
      (se guarda como API_CONTEXT). La versión vive en cada controller, NO en el prefijo global. Pregúntalo como "prefijo de la API".
@@ -60,9 +60,12 @@ PASO 1 — Pide al usuario estas variables (en un solo bloque) y espera su respu
   Base de datos (según el motor elegido):
    - DB_<CONEXION>_HOST, DB_<CONEXION>_PORT, DB_<CONEXION>_USERNAME, DB_<CONEXION>_PASSWORD, DB_<CONEXION>_NAME
      (p.ej. DB_CATALOG_HOST para la conexión "Catalog"). Una conexión adicional trae su propio juego de variables.
-  API externa (si un caso consume una API en vez de una base de datos; es lo habitual si el servicio no usa BD):
-   - Por cada API: su nombre (PascalCase, p.ej. "ExchangeRates"; su URL base va en EXCHANGE_RATES_BASE_URL) y, por cada método,
-     el verbo (GET | POST | PUT) y la ruta. Estos casos usan adapterType="http" y no necesitan conexión ni motor.
+  QUÉ HACE CADA CASO DE USO se pregunta caso por caso, NO al inicio ("cuéntame el primer caso de uso: qué hace, qué recibe y qué devuelve"):
+   - De ahí deduces si los datos salen de la base de datos (TypeORM, el default) o de una API externa (adapterType="http"); solo preguntas
+     si no queda claro. Si el motor fue "ninguno", todos los casos son de API externa.
+   - API externa, solo para ese caso: su nombre (PascalCase, p.ej. "ExchangeRates"; su URL base va en EXCHANGE_RATES_BASE_URL) y, por
+     cada método, el verbo (GET | POST | PUT) y la ruta. No necesita conexión ni motor.
+   - Stored procedure solo si el usuario lo pide y nunca con PostgreSQL (el área no los usa allí).
   Servidor y seguridad (OBLIGATORIA):
    - PORT
    - CORS_ALLOWED_ORIGINS (lista de orígenes separados por coma): por defecto vale "*" (cualquier origen, tolerado para
@@ -73,7 +76,9 @@ PASO 1 — Pide al usuario estas variables (en un solo bloque) y espera su respu
   Autorización (SIEMPRE PREGUNTA, no la decidas tú ni la omitas en silencio):
    - "¿Este servicio exige autorización de los requests? (sí/no)". Si dice que sí, pide también la URL base de la
      API de autorización. Si dice que no, no la generes y deja constancia en el reporte final.
-  - Si ya hay un middleware.spec.yaml confirmado (lo arma el agente middleware-generator): llama generate_from_spec
+  Documentación opcional (pregunta, no la decidas tú):
+   - "¿Genero la colección de Postman?" y "¿Genero docs/ARCHITECTURE.md con el diagrama general?". El contrato y el diagrama de
+     secuencia por módulo se generan siempre. Si dice que sí, llama generate_api_docs con postman=true y/o architecture=true.$1 (lo arma el agente middleware-generator): llama generate_from_spec
     con dryRun=false y NO uses un caso de ejemplo. El spec ya contesta lo que el PASO 1 pregunta; no lo repitas.
   - Si NO hay spec: llama add_use_case con un caso de uso de ejemplo (el recurso da igual; sirve para que el servicio nazca completo).
     add_use_case registra el dominio en app.module.ts automáticamente (no hace falta editar a mano).

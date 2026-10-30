@@ -47,11 +47,11 @@ function ensureExternalApiError(projectRoot: string, dominio: string, errorPrefi
   const [number] = nextErrorNumbers(projectRoot, errorPrefix, 1)
   const entry = [
     '  EXTERNAL_API_ERROR: {',
-    "    message: 'The external API did not answer correctly.',",
+    "    message: 'La API externa no respondió correctamente.',",
     `    code: '${errorPrefix}-EXTERNALAPI-${formatErrorNumber(number)}',`,
-    "    title: 'External API error',",
+    "    title: 'Error en la API externa.',",
     '    status: 502,',
-    "    suggestedActions: 'Try again later. If it persists, contact the team that owns the external API.'",
+    "    suggestedActions: 'Intente nuevamente más tarde. Si persiste, contacte al equipo responsable de la API externa.'",
     '  },',
     ''
   ].join('\n')

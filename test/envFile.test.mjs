@@ -74,7 +74,7 @@ test('connections, authorization and stored procedures each land in their own se
     await addAuthorization({ projectRoot: root, authorizationApiUrl: 'http://auth.example/authorization/v1', overwrite: false })
     await addUseCase({
       projectRoot: root, dominio: 'stock', caso: 'RetrieveStock', entidad: 'Stock', metodo: 'run', param: 'sku', accion: 'retrieveStock',
-      prefijoError: 'STOCK', conexion: 'Billing', motor: 'postgres', adapterType: 'sp', nombreSp: 'GetStock',
+      prefijoError: 'STOCK', conexion: 'Billing', motor: 'mysql', adapterType: 'sp', nombreSp: 'GetStock',
       mode: 'greenfield', connectionStyle: 'named', infraStyle: 'dataset', overwrite: true
     })
     const text = readFileSync(join(root, '.env.example'), 'utf8')
@@ -86,7 +86,7 @@ test('connections, authorization and stored procedures each land in their own se
 
     const vars = variables(text)
     assert.equal(vars.AUTHORIZATION_API_URL, 'http://auth.example/authorization/v1')
-    assert.equal(vars.DB_BILLING_PORT, '5432')
+    assert.equal(vars.DB_BILLING_PORT, '3306')
     assert.equal(vars.GET_STOCK_SP, 'sp_Nombre_Del_Procedure')
     // nothing is duplicated
     const keys = text.split(/\r?\n/).filter((l) => l && !l.startsWith('#')).map((l) => l.split('=')[0])

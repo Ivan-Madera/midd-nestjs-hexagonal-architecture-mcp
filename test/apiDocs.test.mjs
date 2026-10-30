@@ -21,7 +21,7 @@ async function service({ authorization = false } = {}) {
   return projectRoot
 }
 
-const useCase = (projectRoot, dominio, caso, adapterType = 'typeorm') =>
+const useCase = (projectRoot, dominio, caso, adapterType = 'typeorm', motor = 'postgres') =>
   addUseCase({
     projectRoot,
     dominio,
@@ -32,7 +32,7 @@ const useCase = (projectRoot, dominio, caso, adapterType = 'typeorm') =>
     accion: caso[0].toLowerCase() + caso.slice(1),
     prefijoError: 'CATALOG',
     conexion: 'Catalog',
-    motor: 'postgres',
+    motor,
     adapterType,
     nombreSp: adapterType === 'sp' ? 'GetThing' : undefined,
     mode: 'greenfield',
@@ -74,16 +74,25 @@ test('the authorization module is reflected: token in the contract, 401/403 in t
   }
 })
 
-test('stored procedure adapters use the dialect of the engine in the diagram', async () => {
-  const root = await service()
+test('stored procedure adapters use the dialect of the engine in the diagram, and PostgreSQL has none', async () => {
+  const mysql = mkdtempSync(join(tmpdir(), 'midd-docs-'))
+  const postgres = await service()
   try {
-    await useCase(root, 'inventory', 'RetrieveStock', 'sp')
-    assert.match(read(root, 'src/inventory/diagrams/inventory.flow.mmd'), /SELECT \* FROM stored function/, 'postgres calls a function')
+    await scaffoldService({ projectRoot: mysql, motor: 'mysql', prefijoApi: 'midd-catalog', prefijoError: 'CATALOG', overwrite: true })
+    const r = await useCase(mysql, 'inventory', 'RetrieveStock', 'sp', 'mysql')
+    assert.notEqual(r.isError, true, r.content[0].text)
+    assert.match(read(mysql, 'src/inventory/diagrams/inventory.flow.mmd'), /CALL stored procedure/, 'mysql calls a procedure')
+
+    // the area does not use stored procedures on PostgreSQL: refused, nothing written
+    const refused = await useCase(postgres, 'inventory', 'RetrieveStock', 'sp')
+    assert.equal(refused.isError, true)
+    assert.match(refused.content[0].text, /no usa stored procedures en PostgreSQL/)
+    assert.equal(existsSync(join(postgres, 'src/inventory')), false)
   } finally {
-    rmSync(root, { recursive: true, force: true })
+    rmSync(mysql, { recursive: true, force: true })
+    rmSync(postgres, { recursive: true, force: true })
   }
 })
-
 test('Postman: only on request, one folder per module, merging never touches the other folders', async () => {
   const root = await service()
   try {

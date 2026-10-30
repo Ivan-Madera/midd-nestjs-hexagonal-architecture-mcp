@@ -567,7 +567,7 @@ test('a generated NestJS service compiles, passes its own checks and serves its 
           const broken = await ask('BOOM')
           assert.equal(broken.status, 502, 'an error of the API is an upstream error, not a 500 of this service')
           assert.equal(broken.json.errors[0].code, 'RATES-EXTERNALAPI-003')
-          assert.equal(broken.json.errors[0].title, 'External API error')
+          assert.equal(broken.json.errors[0].title, 'Error en la API externa.')
           assert.ok(broken.json.meta.correlationId)
         } finally {
           proc.kill('SIGKILL')

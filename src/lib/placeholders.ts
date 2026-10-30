@@ -1,5 +1,5 @@
 import { envVarApiBaseUrl, httpCallExpression, isHttpVerb } from './adapters.js'
-import { formatErrorNumber } from './errorCodes.js'
+import { capitalize, entityText, formatErrorNumber } from './errorCodes.js'
 /**
  * Sustitución de placeholders case-sensitive.
  *
@@ -142,6 +142,9 @@ export function buildPlaceholderMap(input: {
     '<servicio>': servicio,
     '<PREFIJO>': input.prefijoError,
     '<SLUG>': slug,
+    // Error texts are written from the entity (in Spanish, as the area's catalogs): a person corrects what does not fit.
+    '<ENTIDAD_TXT>': entityText(input.entidad),
+    '<ENTIDAD_TXT_CAP>': capitalize(entityText(input.entidad)),
     '<ERR_NUM_APP>': formatErrorNumber(input.errorNumApp ?? 1),
     '<ERR_NUM_DOM>': formatErrorNumber(input.errorNumDom ?? 1),
     '<ruta-dominio>': input.rutaDominio,
