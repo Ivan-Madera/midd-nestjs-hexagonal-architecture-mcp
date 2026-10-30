@@ -1,5 +1,6 @@
 import type { AdapterType, HttpVerb } from './adapters.js'
 import { httpCallExpression } from './adapters.js'
+import { domainFolder, toKebab } from './names.js'
 /**
  * Enriquecimiento de puertos inbound/outbound a N MÉTODOS.
  *
@@ -8,10 +9,10 @@ import { httpCallExpression } from './adapters.js'
  * entidad request y response tipadas. Este módulo parchea, de forma idempotente
  * y conservadora (anclado a marcas estables), los 4 archivos que deben conocer
  * cada método adicional:
- *   - core/domain/ports/inbound/I<Caso>Service.ts
- *   - core/domain/ports/outbound/I<Caso>Repository.ts
+ *   - core/domain/ports/inbound/<caso>.inbound.port.ts
+ *   - core/domain/ports/outbound/<caso>.outbound.port.ts
  *   - core/domain/services/<caso>.domain.service.ts
- *   - infrastructure/adapters/<caso>.(sp|typeorm).adapter.ts
+ *   - infrastructure/adapters/<caso>.(sp|typeorm|http).adapter.ts   (<caso> in kebab-case)
  * y crea las entidades de dominio request/response que falten.
  *
  * Firmas (fieles al canon):
@@ -69,14 +70,14 @@ function capitalize(s: string): string {
   return s.charAt(0).toUpperCase() + s.slice(1)
 }
 
-// --- Puerto inbound: I<Caso>Service.ts --------------------------------------
+// --- Puerto inbound: <caso>.inbound.port.ts --------------------------------------
 function patchInboundPort(file: string, methods: PortMethod[]): boolean {
   let content = read(file)
   if (!content) return false
   const before = content
   for (const m of methods) {
-    content = addEntityImport(content, m.request, `../../entities/${m.request}.entity`)
-    content = addEntityImport(content, m.response, `../../entities/${m.response}.entity`)
+    content = addEntityImport(content, m.request, `../../entities/${toKebab(m.request)}.entity`)
+    content = addEntityImport(content, m.response, `../../entities/${toKebab(m.response)}.entity`)
     const sig = `  ${m.name}(${firmaArgs(m)}): Promise<${m.response}>`
     if (!new RegExp(`\\b${m.name}\\s*\\(`).test(content)) {
       content = insertBeforeLastBrace(content, sig)
@@ -87,7 +88,7 @@ function patchInboundPort(file: string, methods: PortMethod[]): boolean {
   return true
 }
 
-// --- Puerto outbound: I<Caso>Repository.ts ----------------------------------
+// --- Puerto outbound: <caso>.outbound.port.ts ----------------------------------
 function patchOutboundPort(file: string, methods: PortMethod[]): boolean {
   // Misma forma que el inbound (el domain service delega 1:1 en el repositorio).
   return patchInboundPort(file, methods)
@@ -100,8 +101,8 @@ function patchDomainService(file: string, caso: string, methods: PortMethod[]): 
   const before = content
   const repoProp = `${lcFirst(caso)}Repository`
   for (const m of methods) {
-    content = addEntityImport(content, m.request, `../entities/${m.request}.entity`)
-    content = addEntityImport(content, m.response, `../entities/${m.response}.entity`)
+    content = addEntityImport(content, m.request, `../entities/${toKebab(m.request)}.entity`)
+    content = addEntityImport(content, m.response, `../entities/${toKebab(m.response)}.entity`)
     if (new RegExp(`\\basync\\s+${m.name}\\s*\\(`).test(content)) continue
     const impl =
       `\n  async ${m.name}(data: ${m.request}): Promise<${m.response}> {\n` +
@@ -121,8 +122,8 @@ function patchAdapter(file: string, methods: PortMethod[], adapterType: AdapterT
   const before = content
   const entitiesRel = '../../core/domain/entities'
   for (const m of methods) {
-    content = addEntityImport(content, m.request, `${entitiesRel}/${m.request}.entity`)
-    content = addEntityImport(content, m.response, `${entitiesRel}/${m.response}.entity`)
+    content = addEntityImport(content, m.request, `${entitiesRel}/${toKebab(m.request)}.entity`)
+    content = addEntityImport(content, m.response, `${entitiesRel}/${toKebab(m.response)}.entity`)
     if (new RegExp(`\\basync\\s+${m.name}\\s*\\(`).test(content)) continue
     if (adapterType === 'http') {
       // External API: same helpers as the principal method (url() joins the base URL, result() translates the answer).
@@ -156,7 +157,7 @@ function patchAdapter(file: string, methods: PortMethod[], adapterType: AdapterT
         `\n  async ${m.name}(data: ${m.request}): Promise<${m.response}> {\n` +
         `    // TODO: implementa la consulta TypeORM para ${m.name} y mapea a ${m.response}.\n` +
         `    const row = await this.repository.findOne({ where: { ...data } as any })\n` +
-        `    return row ? ({ ...row } as unknown as ${m.response}) : null\n` +
+        `    return row ? Mapper(${m.response}, row) : null\n` +
         `  }\n`
       content = insertBeforeLastBrace(content, impl)
     }
@@ -174,7 +175,7 @@ function ensureEntity(opts: {
   created: string[]
 }): void {
   const { projectRoot, dominioLower, entity, created } = opts
-  const rel = `src/${dominioLower}/core/domain/entities/${entity}.entity.ts`
+  const rel = `src/${dominioLower}/core/domain/entities/${toKebab(entity)}.entity.ts`
   const full = join(projectRoot, rel)
   if (existsSync(full)) return
   const body =
@@ -204,8 +205,8 @@ export function enrichPortMethods(opts: {
   methods: PortMethod[] // métodos a asegurar (adicionales; el principal ya está)
 }): EnrichResult {
   const { projectRoot, dominio, caso, adapterType, methods } = opts
-  const domLower = dominio.toLowerCase()
-  const casoCamel = lcFirst(caso)
+  const domLower = domainFolder(dominio)
+  const casoKebab = toKebab(caso)
   const patched: string[] = []
   const created: string[] = []
   const warnings: string[] = []
@@ -228,12 +229,12 @@ export function enrichPortMethods(opts: {
 
   // 2) Archivos del slice a parchear.
   const base = join(projectRoot, 'src', domLower)
-  const inbound = join(base, `core/domain/ports/inbound/I${caso}Service.ts`)
-  const outbound = join(base, `core/domain/ports/outbound/I${caso}Repository.ts`)
-  const domainSvc = join(base, `core/domain/services/${casoCamel}.domain.service.ts`)
+  const inbound = join(base, `core/domain/ports/inbound/${casoKebab}.inbound.port.ts`)
+  const outbound = join(base, `core/domain/ports/outbound/${casoKebab}.outbound.port.ts`)
+  const domainSvc = join(base, `core/domain/services/${casoKebab}.domain.service.ts`)
   const adapterFile = join(
     base,
-    `infrastructure/adapters/${casoCamel}.${adapterType}.adapter.ts`
+    `infrastructure/adapters/${casoKebab}.${adapterType}.adapter.ts`
   )
 
   const steps: Array<[string, () => boolean]> = [

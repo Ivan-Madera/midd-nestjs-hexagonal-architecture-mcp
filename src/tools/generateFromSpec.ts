@@ -11,6 +11,7 @@ import { wireStoredProcedure } from '../lib/spWiring.js'
 import { deriveEnvVarSp } from '../lib/placeholders.js'
 import { MOTORES, PROFILES } from '../lib/engines.js'
 import { refreshApiDocs } from '../lib/apiDocs.js'
+import { domainFolder, toKebab } from '../lib/names.js'
 import * as s from '../lib/schemas.js'
 
 /**
@@ -56,23 +57,22 @@ type PlanCase = {
 
 /** Archivos que el slice de un caso produce (rutas relativas a src/<module>/). */
 function slicePaths(spec: MiddlewareSpec, useCase: string, adapter: AdapterType): string[] {
-  const dom = spec.module.toLowerCase()
-  const Caso = useCase
-  const caso = Caso.charAt(0).toLowerCase() + Caso.slice(1)
+  const dom = domainFolder(spec.module)
+  const caso = toKebab(useCase)
   const adapterFile = `${caso}.${adapter}.adapter.ts`
   return [
     `src/${dom}/${dom}.module.ts`,
     `src/${dom}/core/${dom}.core.module.ts`,
-    `src/${dom}/core/domain/ports/inbound/I${Caso}Service.ts`,
-    `src/${dom}/core/domain/ports/outbound/I${Caso}Repository.ts`,
+    `src/${dom}/core/domain/ports/inbound/${caso}.inbound.port.ts`,
+    `src/${dom}/core/domain/ports/outbound/${caso}.outbound.port.ts`,
     `src/${dom}/core/domain/services/${caso}.domain.service.ts`,
-    `src/${dom}/core/application/interfaces/I${Caso}Application.ts`,
+    `src/${dom}/core/application/interfaces/${caso}.application.interface.ts`,
     `src/${dom}/core/application/services/${caso}.application.ts`,
-    `src/${dom}/infrastructure/infrastructure.${dom}.module.ts`,
+    `src/${dom}/infrastructure/${dom}.infrastructure.module.ts`,
     `src/${dom}/infrastructure/adapters/${adapterFile}`,
     `src/${dom}/infrastructure/http-server/controllers/${caso}.controller.ts`,
     `src/${dom}/infrastructure/http-server/dto/${caso}.dto.ts`,
-    `src/${dom}/infrastructure/http-server/dto/${caso}RequestJsonApi.dto.ts`
+    `src/${dom}/infrastructure/http-server/dto/${caso}-request-json-api.dto.ts`
   ]
 }
 
@@ -98,7 +98,7 @@ function renderPlan(spec: MiddlewareSpec, plan: PlanCase[], mode: string): strin
   lines.push(`  stack: ${spec.stack} | modo: ${mode} | complejidad declarada: ${spec.complexity.level}`)
   if (!spec.useCases.some((uc) => usesDatabase(uc.adapter))) lines.push(`  conexión: ninguna (todos los casos consumen una API externa) | prefijo error: ${spec.errorPrefix}`)
   else lines.push(`  conexión: ${spec.connection.name} (${spec.connection.style}, ${spec.connection.engine && spec.connection.engine !== 'none' ? PROFILES[spec.connection.engine].label : 'conexion del proyecto'}) | prefijo error: ${spec.errorPrefix}`)
-  lines.push(`  carpeta destino: src/${spec.module.toLowerCase()}/`)
+  lines.push(`  carpeta destino: src/${domainFolder(spec.module)}/`)
   if (spec.businessRules.none) lines.push('  reglas de negocio: ninguna (declarado explícitamente)')
   else {
     lines.push(`  reglas de negocio (${spec.businessRules.rules.length}):`)
@@ -204,6 +204,7 @@ export async function generateFromSpec(a: {
       param: deriveParam(principal.request),
       request: principal.request,
       accion: pc.action,
+      tipoRecurso: pc.resourceType || undefined,
       prefijoError: spec.errorPrefix,
       conexion: spec.connection.name,
       motor: spec.connection.engine,
@@ -261,19 +262,18 @@ export async function generateFromSpec(a: {
       // declared (ConfigurationVariables + joiSchema + .env.example) or the service does not compile.
       // add_use_case only wires the principal SP, so the extra ones are wired here.
       if (pc.adapter === 'sp') {
-        const casoCamel = pc.useCase.charAt(0).toLowerCase() + pc.useCase.slice(1)
         for (const m of extra) {
           if (!m.sp) continue
           const envVarSp = deriveEnvVarSp(m.sp)
           const wiring = wireStoredProcedure({
             projectRoot: a.projectRoot,
             dominio: dom,
-            casoCamel,
+            casoKebab: toKebab(pc.useCase),
             nombreSp: m.sp,
             envVarSp,
             patchModules: false
           })
-          outputs.push(`  SP "${m.sp}" (env: ${envVarSp}) registrado en ConfigurationVariables, joiSchema y .env.example.`)
+          outputs.push(`  SP "${m.sp}" (env: ${envVarSp}) registrado en la configuracion, el Joi schema y .env.example.`)
           for (const f of wiring.patched) outputs.push(`  ~ ${f}`)
           for (const w of wiring.warnings) outputs.push(`  AVISO: ${w}`)
         }
@@ -292,7 +292,8 @@ export async function generateFromSpec(a: {
         requestEntity: principal.request,
         responseEntity: principal.response || spec.entity,
         input: spec.dtos.input,
-        output: spec.dtos.output
+        output: spec.dtos.output,
+        adapterType: pc.adapter
       })
       if (dto.patched.length || dto.warnings.length) {
         outputs.push('')

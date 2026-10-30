@@ -3,6 +3,7 @@ import { dirname, join, relative, resolve } from 'node:path'
 import { listConnections } from './connections.js'
 import type { AdapterType } from './adapters.js'
 import type { Motor } from './engines.js'
+import { domainFolder } from './names.js'
 
 /**
  * API documentation generated from the REAL code of the service (controllers, DTOs, error catalogs),
@@ -13,7 +14,7 @@ import type { Motor } from './engines.js'
  *               src/<module>/diagrams/<module>.flow.mmd     Mermaid sequence diagram (one per module)
  * Per service:  docs/api/README.md                          index of the contracts
  *               docs/api/middleware.postman_collection.json one collection, a folder per module (opt-in)
- *               docs/ARCHITECTURE.md                        Mermaid architecture-beta overview (opt-in)
+ *               docs/ARCHITECTURE.md                        Mermaid architecture-beta overview (always)
  */
 
 export const API_DOCS_BANNER = 'Generado por midd-nestjs-hexagonal-architecture-mcp (generate_api_docs). No lo edites a mano: se regenera desde el codigo.'
@@ -267,7 +268,7 @@ export function scanService(projectRoot: string): ServiceDoc {
         const caseSlug = file.split(/[\\/]/).pop()!.replace(/\.controller\.ts$/, '')
         const controllerClass = classNameOf(text) ?? caseSlug
         const resourceType = /\btype:\s*'([^']*)'/.exec(text)?.[1] ?? base
-        const application = walk(join(moduleDir, 'core', 'application', 'services'), (f) => f.endsWith(`${caseSlug}.application.ts`))[0]
+        const application = walk(join(moduleDir, 'core', 'application', 'services'), (f) => f.split(/[\\/]/).pop() === `${caseSlug}.application.ts`)[0]
         const applicationClass = application ? classNameOf(read(application)) : undefined
         const adapter = adapterOf(moduleDir, caseSlug)
         const handlers = [...text.matchAll(/@Post\(\s*(?:'([^']*)')?\s*\)([\s\S]*?)(?:public\s+)?async\s+(\w+)\s*\(([\s\S]*?)\)\s*:/g)]
@@ -643,7 +644,8 @@ export function generateApiDocs(options: GenerateOptions): GenerateResult {
   const postmanFile = join(projectRoot, 'docs', 'api', 'middleware.postman_collection.json')
   const architectureFile = join(projectRoot, 'docs', 'ARCHITECTURE.md')
   const wantPostman = options.postman === true || existsSync(postmanFile)
-  const wantArchitecture = options.architecture === true || existsSync(architectureFile)
+  // Always generated (derived from the code, nothing to ask); only an explicit `architecture: false` skips it.
+  const wantArchitecture = options.architecture !== false
 
   for (const m of selected) {
     result.modules.push(m.module)
@@ -663,7 +665,7 @@ export function generateApiDocs(options: GenerateOptions): GenerateResult {
 /** Non-fatal refresh used after generating code: documentation must never make a generation fail. */
 export function refreshApiDocs(projectRoot: string, module?: string): GenerateResult | undefined {
   try {
-    return generateApiDocs({ projectRoot, modules: module ? [module.toLowerCase()] : undefined })
+    return generateApiDocs({ projectRoot, modules: module ? [domainFolder(module)] : undefined })
   } catch {
     return undefined
   }

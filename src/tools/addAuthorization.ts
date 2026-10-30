@@ -5,6 +5,7 @@ import { materializeTree } from '../lib/dataset.js'
 import { addImport, appendToArray } from '../lib/moduleMerge.js'
 import { learnDecision } from '../lib/learnings.js'
 import { ENV_SECTIONS, addEnvEntries } from '../lib/envFile.js'
+import { configFile } from '../lib/projectFiles.js'
 import * as s from '../lib/schemas.js'
 
 // ---------------------------------------------------------------------------
@@ -118,10 +119,9 @@ export async function addAuthorization(args: {
     overwrite: args.overwrite
   })
 
-  const sharedConfig = join(projectRoot, 'src', 'shared', 'infrastructure', 'config')
   const results = {
-    ConfigurationVariables: patchConfigurationVariables(join(sharedConfig, 'ConfigurationVariables.ts')),
-    joiSchema: patchJoiSchema(join(sharedConfig, 'joiSchema.ts')),
+    ConfigurationVariables: patchConfigurationVariables(configFile(projectRoot, 'variables')),
+    joiSchema: patchJoiSchema(configFile(projectRoot, 'joi')),
     '.env.example': patchEnvExample(join(projectRoot, '.env.example'), args.authorizationApiUrl),
     'app.module': patchAppModule(join(projectRoot, 'src', 'app.module.ts')),
     'health probe': patchHealthController(projectRoot)

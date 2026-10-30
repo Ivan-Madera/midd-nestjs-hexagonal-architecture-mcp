@@ -8,7 +8,7 @@ import { Request } from 'express'
 import { Observable, catchError, concatMap, finalize } from 'rxjs'
 import { DataSource } from 'typeorm'
 import { InjectDataSource } from '@nestjs/typeorm'
-import Logger from '../../../ErrorEventManagement/logger/Logger.service'
+import Logger from '../../../error-event-management/logger/logger.service'
 
 export const ENTITY_MANAGER_KEY = 'ENTITY_MANAGER'
 

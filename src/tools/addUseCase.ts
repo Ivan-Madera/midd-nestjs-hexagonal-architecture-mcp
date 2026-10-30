@@ -1,4 +1,6 @@
 import { join } from 'node:path'
+import { domainFolder, toKebab } from '../lib/names.js'
+import { legacyDomainLayout } from '../lib/projectFiles.js'
 import { materializeTree } from '../lib/dataset.js'
 import { buildPlaceholderMap } from '../lib/placeholders.js'
 import { wireStoredProcedure } from '../lib/spWiring.js'
@@ -26,6 +28,7 @@ export const addUseCaseSchema = {
   param: s.param,
   request: s.request,
   accion: s.accion,
+  tipoRecurso: s.tipoRecurso,
   prefijoError: s.prefijoError,
   conexion: s.conexion,
   motor: s.motorOpcional,
@@ -52,6 +55,7 @@ export async function addUseCase(input: {
   param: string
   request?: string
   accion: string
+  tipoRecurso?: string
   prefijoError: string
   conexion?: string
   motor?: MotorChoice
@@ -69,6 +73,19 @@ export async function addUseCase(input: {
   overwrite: boolean
 }) {
   const args = { ...input, conexion: input.conexion ?? '' }
+  // A domain written before the kebab-case standard has other file names: mixing both layouts in one domain breaks it.
+  const legacy = legacyDomainLayout(args.projectRoot, domainFolder(args.dominio))
+  if (legacy) {
+    return {
+      content: [
+        {
+          type: 'text' as const,
+          text: `ERROR: el dominio "${args.dominio}" ya existe con la estructura anterior (src/${domainFolder(args.dominio)}/${legacy}). Mezclar la estructura nueva (archivos kebab-case: <dominio>.infrastructure.module.ts, <caso>.inbound.port.ts...) con la anterior rompe sus modulos. Renombra el dominio existente a la convencion kebab-case, o agrega el caso a mano; no se genera nada.`
+        }
+      ],
+      isError: true
+    }
+  }
   // Guardarraíl: SP es opt-in explícito y requiere nombre.
   if (args.adapterType === 'sp' && !args.nombreSp) {
     return {
@@ -171,8 +188,8 @@ export async function addUseCase(input: {
     prefijoError: args.prefijoError,
     errorNumApp: errorNumbers[0],
     errorNumDom: errorNumbers[1],
-    rutaDominio: args.dominio.toLowerCase(),
-    tipoRecurso: args.entidad.toLowerCase(),
+    rutaDominio: domainFolder(args.dominio),
+    tipoRecurso: args.tipoRecurso ?? toKebab(args.entidad),
     conexion: args.conexion,
     nombreSp: args.nombreSp,
     envVarSp: args.envVarSp,
@@ -184,10 +201,10 @@ export async function addUseCase(input: {
     infraRoot: args.infraRoot
   })
 
-  // El dominio se escribe en src/<dominio-lowercase>/ (convención de carpetas
+  // El dominio se escribe en src/<dominio-kebab>/ (convención de carpetas
   // del área, y evita el choque de case con las CLASES PascalCase en FS
   // case-insensitive). Las clases usan el PascalCase que deriva buildPlaceholderMap.
-  const destRoot = join(args.projectRoot, 'src', args.dominio.toLowerCase())
+  const destRoot = join(args.projectRoot, 'src', domainFolder(args.dominio))
 
   // Excluir el adapter que NO corresponde al adapterType elegido.
   const adaptersToExclude =
@@ -212,7 +229,7 @@ export async function addUseCase(input: {
   // caso debe quedar registrado en ellos automáticamente. La diferencia de modo
   // la marca app.module: en refactor NO se toca app.module (ver más abajo), pero
   // los módulos del propio dominio sí se mergean para no dejar el cableado a mano.
-  const domLower = args.dominio.toLowerCase()
+  const domLower = domainFolder(args.dominio)
   const domainModuleRel = `${domLower}.module.ts`
   const dominioYaExistia = result.skipped.some((f) => f.endsWith(domainModuleRel))
   const mergeNotas: string[] = []
@@ -220,13 +237,15 @@ export async function addUseCase(input: {
     const casoCamel = map['__caso__']
     const casoUpper = map['__CASO__']
     const adapterClass = `${args.caso}Adapter`
-    const adapterFile =
-      `${casoCamel}.${args.adapterType}.adapter`
+    const casoKebab = map['__casoKebab__']
+    const adapterFile = `${casoKebab}.${args.adapterType}.adapter`
     const names: CaseNames = {
       caso: args.caso,
       casoCamel,
+      casoKebab,
       casoUpper,
       entidad: args.entidad,
+      entidadKebab: map['__entidadKebab__'],
       adapterClass,
       adapterImportPath: `./adapters/${adapterFile}`,
       adapterImportPathFromRoot: `./infrastructure/adapters/${adapterFile}`,
@@ -264,20 +283,19 @@ export async function addUseCase(input: {
   // (import al .sp.adapter, sin forFeature) y registra el SP en config/joi/.env.
   const notas: string[] = []
   if (args.adapterType === 'sp') {
-    const casoCamel = map['__caso__']
     const nombreSp = map['__NombreSp__']
     const envVarSp = map['__ENV_VAR_SP__']
     const wiring = wireStoredProcedure({
       projectRoot: args.projectRoot,
       dominio: args.dominio,
-      casoCamel,
+      casoKebab: map['__casoKebab__'],
       nombreSp,
       envVarSp,
       entidad: args.entidad,
       patchModules: !dominioYaExistia
     })
     notas.push(
-      `SP opt-in cableado automáticamente: "${nombreSp}" (env: ${envVarSp}) registrado en ConfigurationVariables, joiSchema y .env.example; módulos apuntando al .sp.adapter.`
+      `SP opt-in cableado automáticamente: "${nombreSp}" (env: ${envVarSp}) registrado en la configuracion (configuration-variables), el Joi schema y .env.example; módulos apuntando al .sp.adapter.`
     )
     for (const f of wiring.patched) notas.push(`Ajustado: ${f}`)
     for (const w of wiring.warnings) notas.push(`AVISO: ${w}`)
@@ -288,13 +306,13 @@ export async function addUseCase(input: {
     const wiring = wireExternalApi({
       projectRoot: args.projectRoot,
       dominio: args.dominio,
-      casoCamel: map['__caso__'],
+      casoKebab: map['__casoKebab__'],
       api: args.apiExterna,
       errorPrefix: args.prefijoError,
       entidad: args.entidad,
       patchModules: !dominioYaExistia
     })
-    notas.push(`API externa "${args.apiExterna}" cableada: la URL base va en ${map['__ENV_VAR_API__']} (config, joiSchema y .env.example); los modulos apuntan al .http.adapter. AGENTE: pide al usuario esa URL y escríbela tú en el .env.`)
+    notas.push(`API externa "${args.apiExterna}" cableada: la URL base va en ${map['__ENV_VAR_API__']} (configuration-variables, joi-schema y .env.example); los modulos apuntan al .http.adapter. AGENTE: pide al usuario esa URL y escríbela tú en el .env.`)
     for (const f of wiring.patched) notas.push(`Ajustado: ${f}`)
     for (const w of wiring.warnings) notas.push(`AVISO: ${w}`)
     notas.push('Revisa el mapeo de la respuesta de la API a la entidad de dominio, y las credenciales si la API las exige (TODO en el adapter).')
@@ -344,7 +362,7 @@ export async function addUseCase(input: {
       {
         type: 'text' as const,
         text: [
-          `Caso de uso "${args.caso}" generado en src/${args.dominio.toLowerCase()}/ (adapter: ${args.adapterType}).`,
+          `Caso de uso "${args.caso}" generado en src/${domainFolder(args.dominio)}/ (adapter: ${args.adapterType}).`,
           '',
           `Archivos escritos (${result.written.length}):`,
           ...result.written.map((f) => `  + ${f}`),

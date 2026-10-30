@@ -21,6 +21,15 @@ const PICK_THE_AGENT = [
   `PARA EL AGENTE: si no eres \`${AGENT}\`, dile esto al usuario antes de seguir y continua solo si el te lo confirma.`
 ]
 
+const gateNotice = (projectRoot: string): string =>
+  [
+    `KIT DEL MCP INSTALADO automaticamente en ${projectRoot}. TODAVIA NO GENERE NADA.`,
+    `Este chat sigue con el agente por defecto de Kiro, que no conoce el flujo del MCP ni las preguntas que hace`,
+    `(prefijo de la API, base de datos, autorizacion, casos de uso...). Generar desde aqui se saltaria todo eso.`,
+    ...PICK_THE_AGENT.slice(0, -1),
+    'PARA EL AGENTE: no llames otra vez esta herramienta ni sigas generando en este chat. Explicale esto al usuario y espera a que cambie de agente.'
+  ].join('\n')
+
 export function kitNotice(result: KitEnsureResult, projectRoot: string, entry: boolean): string | undefined {
   switch (result.state) {
     case 'installed':
@@ -51,14 +60,21 @@ export function kitNotice(result: KitEnsureResult, projectRoot: string, entry: b
  * `creates`: the tool may be given a folder that does not exist yet (a new service). Any other tool skips a
  * `projectRoot` that is not there, so a typo never creates a stray folder.
  * `entry`: the tool opens a flow, so it also reminds which agent to use when the kit was already installed.
+ * `skip`: a call that must not write anything (a dry run) installs nothing.
  */
 export function withKit<A extends { projectRoot?: string }, R extends { content: Array<{ type: 'text'; text: string }> }>(
-  options: { creates?: boolean; entry?: boolean },
+  options: { creates?: boolean; entry?: boolean; skip?: (args: A) => boolean; gate?: boolean },
   handler: (args: A) => Promise<R>
 ): (args: A) => Promise<R> {
   return async (args: A) => {
     const root = args.projectRoot
-    const ensured = autoKitEnabled() && root && (options.creates || existsSync(root)) ? ensureAgenticKit(root) : undefined
+    const skipped = options.skip?.(args) === true
+    const ensured = !skipped && autoKitEnabled() && root && (options.creates || existsSync(root)) ? ensureAgenticKit(root) : undefined
+    // First contact: the kit has just been installed and this chat is still on the default agent, which does not know
+    // the flow or its questions. A tool that generates does NOT run now; the user is told to pick the agent first.
+    if (options.gate && ensured?.state === 'installed' && root) {
+      return { content: [{ type: 'text' as const, text: gateNotice(root) }] } as unknown as R
+    }
     const result = await handler(args)
     const note = ensured && root ? kitNotice(ensured, root, options.entry === true) : undefined
     if (note) result.content.push({ type: 'text' as const, text: note })

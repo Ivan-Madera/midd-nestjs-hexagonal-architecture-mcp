@@ -57,7 +57,7 @@ test('add_use_case writes the contract and the sequence diagram of the module by
     assert.match(flow, /R0->>D: Query via TypeORM/)
     assert.match(read(root, 'docs/api/README.md'), /catalog\.api\.md/)
     assert.equal(existsSync(join(root, 'docs/api/middleware.postman_collection.json')), false, 'Postman is opt-in')
-    assert.equal(existsSync(join(root, 'docs/ARCHITECTURE.md')), false, 'architecture-beta is opt-in')
+    assert.equal(existsSync(join(root, 'docs/ARCHITECTURE.md')), true, 'ARCHITECTURE.md is always generated, it is never asked')
   } finally {
     rmSync(root, { recursive: true, force: true })
   }
@@ -186,7 +186,7 @@ test('commented-out endpoints and the health probe never reach the documentation
   const root = await service()
   try {
     await useCase(root, 'catalog', 'RetrieveProduct')
-    const controller = join(root, 'src/catalog/infrastructure/http-server/controllers/retrieveProduct.controller.ts')
+    const controller = join(root, 'src/catalog/infrastructure/http-server/controllers/retrieve-product.controller.ts')
     const code = readFileSync(controller, 'utf8')
     writeFileSync(controller, code + "\n// @Post('ghost')\n/* @Post('phantom') */\n", 'utf8')
     await generateApiDocsTool({ projectRoot: root, postman: false, architecture: false })

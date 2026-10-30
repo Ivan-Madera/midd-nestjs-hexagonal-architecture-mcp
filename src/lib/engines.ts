@@ -1,3 +1,5 @@
+import { toKebab } from './names.js'
+
 /**
  * Database engine profiles. The agent asks which engine a NEW connection uses and everything that
  * depends on the engine is derived from the answer: TypeORM type, driver package, default port,
@@ -102,12 +104,12 @@ export function connectionEnv(conexion: string) {
 /** Names the generated files and classes of a connection have for an engine. */
 export function connectionNames(conexion: string, motor: Motor) {
   const profile = PROFILES[motor]
-  const camel = lowerFirst(conexion)
+  const kebab = toKebab(conexion)
   return {
     moduleClass: `${profile.classPrefix}${conexion}DatabaseModule`,
     optionClass: `${conexion}${profile.classPrefix}Option`,
-    moduleFile: `${profile.fileTag}.database.${camel}.module`,
-    optionFile: `${camel}.${profile.optionTag}.option`
+    moduleFile: `${profile.fileTag}.database.${kebab}.module`,
+    optionFile: `${kebab}.${profile.optionTag}.option`
   }
 }
 
@@ -117,6 +119,7 @@ export function connectionPlaceholders(conexion: string, motor: Motor): Record<s
   return {
     __Conexion__: conexion,
     __conexion__: lowerFirst(conexion),
+    __conexionKebab__: toKebab(conexion),
     '<Conexion>': conexion,
     '<envPrefix>': connectionEnv(conexion).prefix,
     __Motor__: profile.classPrefix,

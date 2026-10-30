@@ -126,7 +126,7 @@ test('every variable is classified in the topic it belongs to', () => {
 test('Joi gives every CORS and RL_* variable its default, and the verifier fails if one is taken away', async () => {
   const root = await service()
   try {
-    const joiFile = join(root, 'src/shared/infrastructure/config/joiSchema.ts')
+    const joiFile = join(root, 'src/shared/infrastructure/config/joi-schema.ts')
     const joi = readFileSync(joiFile, 'utf8')
     for (const [key, value] of Object.entries(DEFAULTS)) {
       if (key === 'PORT') continue

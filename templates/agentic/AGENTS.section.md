@@ -17,7 +17,13 @@ Tras bambalinas trabaja con dos sub-agentes que **no debes seleccionar**:
 `middleware-gen-worker` (barato, completa el andamiaje) y `middleware-auditor` (premium, valida y deja la
 auditoria). Los tres se instalan y se actualizan juntos con `install_agentic_kit`.
 
+### Decisiones guardadas (a la vista)
+El agente pregunta UNA vez por repo la autorizacion y Postman, y guarda tu respuesta en el bloque
+`midd-nestjs-preferences` de este mismo archivo (`AUTHORIZATION:`, `POSTMAN:`). `undefined` es que todavia no se
+pregunto. Para cambiar una decision edita su valor; el agente la respeta sin volver a preguntar.
 ### Reglas para cualquier agente
+0. **Si no eres el agente `middleware-generator`, no generes un servicio ni un modulo por tu cuenta.** Ese agente es el que hace las
+   preguntas y corre el flujo completo. Dile al usuario que lo seleccione en el selector de agentes del chat y que repita su pedido.
 
 1. **Valida el MCP primero.** Llama `get_rules`. Si falla o viene vacio, **detente**: no escribas codigo del
    modulo, no uses lo que recuerdes de la arquitectura ni hagas un "mejor esfuerzo". Revisa

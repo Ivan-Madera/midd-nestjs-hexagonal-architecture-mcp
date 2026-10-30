@@ -4,12 +4,12 @@ import { ConfigType } from '@nestjs/config'
 import { json, NextFunction, Request, Response } from 'express'
 import helmet from 'helmet'
 import { AppModule } from './app.module'
-import ConfigurationVariables from './shared/infrastructure/config/ConfigurationVariables'
+import ConfigurationVariables from './shared/infrastructure/config/configuration-variables'
 import { AllExceptionsFilter } from './shared/infrastructure/http-server/exception-filters/generic-exception-filter'
-import { ValidationHeaderMiddleware } from './shared/infrastructure/http-server/middlewares/validationHeader.middleware'
+import { ValidationHeaderMiddleware } from './shared/infrastructure/http-server/middlewares/validation-header.middleware'
 import { correlationMiddleware } from './shared/infrastructure/observability/correlation.middleware'
-import { cacheControlNoStore } from './shared/infrastructure/security/cacheControl.middleware'
-import { createPayloadSizeMiddleware } from './shared/infrastructure/security/payloadSize.middleware'
+import { cacheControlNoStore } from './shared/infrastructure/security/cache-control.middleware'
+import { createPayloadSizeMiddleware } from './shared/infrastructure/security/payload-size.middleware'
 
 async function bootstrap() {
   const app = await NestFactory.create(AppModule)

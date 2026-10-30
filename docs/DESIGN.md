@@ -71,7 +71,7 @@ autorizador deniega *o no responde*, el resultado es 403: no existe camino fail-
 `AUTHORIZATION_API_URL` no debe ser obligatoria en un servicio que no la usa; el agente pregunta y
 `add_authorization` parchea config, Joi, `.env.example` y `app.module` de forma idempotente.
 
-**Sin `axios`.** Menos dependencias, menos superficie de CVEs. `consumoHttp` usa `fetch` nativo y mantiene el
+**Sin `axios`.** Menos dependencias, menos superficie de CVEs. `HttpClientService` usa `fetch` nativo y mantiene el
 contrato que ya consumen los adapters (`status`, `data`, `statusText`, `responseErrorApi`), sin lanzar
 excepciones. Nunca asume que el body es JSON, tiene timeout (`AbortSignal.timeout`), reenvía el correlation
 id y reporta el código real de red (`ETIMEDOUT`, `ECONNREFUSED`, `ENOTFOUND`).
@@ -137,7 +137,7 @@ exactamente los valores de su `.env.example` (si faltara una variable obligatori
   los módulos reales de seguridad, health y autorización pero no la base de datos. Lo que toca la BD queda cubierto por la
   compilación, los tests unitarios del servicio y el verificador, no por una conexión viva.
 - **Defecto real que encontró:** un cuerpo mayor al límite enviado por partes (sin `Content-Length`) lo rechazaba el parser de
-  Express con 413, pero con el cuerpo `PF-ERROR-GENERIC` / "Internal Server Error", porque el filtro global no reconocía errores
+  Express con 413, pero con el cuerpo genérico (`PF-ERROR-GENERIC`, hoy `SERVICE-GENERICERROR-000`) / "Internal Server Error", porque el filtro global no reconocía errores
   del parser. Igual un JSON malformado (400). Ahora ambos responden con el sobre del área (`SERVICE-PAYLOADTOOLARGE-019`,
   `SERVICE-BADREQUEST-016`) y `meta.correlationId`.
 
@@ -160,7 +160,7 @@ conexión, que sale del motor (`DB_MSSQL_HOST`, `DB_MSSQL2_HOST`). Confirmado co
   TypeORM y SP se rechazan hasta que se indique un motor; hoy no hay otro tipo de adapter, así que un servicio sin base de datos es solo
   la base hasta que exista uno (por ejemplo, de API externa).
 - **Adapter de API externa (`adapter: http`).** Es lo habitual cuando el servicio no usa base de datos. El caso consume una API con el
-  fetch nativo (`consumoHttp`, sin axios) y no necesita conexión ni motor; si todos los casos del spec son de API externa, ni siquiera se
+  fetch nativo (`HttpClientService`, sin axios) y no necesita conexión ni motor; si todos los casos del spec son de API externa, ni siquiera se
   pregunta el motor. En el spec: `api` (PascalCase) a nivel de caso y `http: { method, path }` por método. La URL base vive en
   `<API>_BASE_URL` (por ejemplo `EXCHANGE_RATES_BASE_URL`): `ConfigurationVariables.externalApis`, Joi `.uri().required()` (sin ella el
   servicio no arranca) y la sección `External APIs` del `.env.example`; la comparten todos los casos contra la misma API. GET envía la
@@ -179,12 +179,22 @@ conexión, que sale del motor (`DB_MSSQL_HOST`, `DB_MSSQL2_HOST`). Confirmado co
   Un caso nuevo en un dominio que ya existe agrega sus entradas a los catálogos; antes quedaban sin la llave y el servicio no compilaba.
   El verificador falla con `ERROR_CODE_DUPLICATE` y avisa con `ERROR_CODE_FORMAT`. Si un prefijo agota el 999, el MCP lo dice y pide otro prefijo.
   Los servicios generados antes conservan sus códigos de 4 dígitos; cuentan por su valor para no chocar con los nuevos.
+- **Error por defecto `GENERICERROR`.** El error de respaldo de cada catálogo es `<PREFIJO>-GENERICERROR-000` (antes `GENERIC-000`) y el del filtro
+  global `SERVICE-GENERICERROR-000` (antes `PF-ERROR-GENERIC`, fuera de formato). Se eligió `GENERICERROR` y no `GENERIC-ERROR` porque el slug no lleva
+  guiones: el código siempre tiene tres partes.
+- **Mapeo desde la fuente como el canon (`midd-pf-enrollment`).** El adapter TypeORM hacía `{ ...row } as unknown as Entidad` y la entidad de
+  dominio nacía sin `@Expose`, así que el `Mapper` del adapter SP (con `excludeExtraneousValues`) devolvía un objeto vacío. Ahora la entidad de
+  respuesta lleva `@Expose` en cada campo y todos los adapters mapean con `Mapper`. **Case de las propiedades: camelCase**, según la guía de
+  TypeScript de Microsoft y las basadas en la de Google (PascalCase solo para clases y tipos); el canon usa PascalCase (`PfmId`) y en esto no se
+  sigue. Las palabras quedan como vienen de la fuente (`tipo_bloqueo` → `tipoBloqueo`), sin traducir: traducir columnas sería ambiguo. Si se
+  quisiera PascalCase, es una sola función (`toPropertyName` en `src/lib/names.ts`). `BLIND_CAST` avisa ante `as unknown as` en un adapter.
+  **No verificado:** un SP real contra una base viva.
 - **Instalación automática del kit de agentes.** Un servidor MCP se configura una vez para todo el usuario, así que al arrancar no sabe qué repo
   está abierto; lo sabe cuando una herramienta recibe `projectRoot`. Ahí (`scaffold_service`, `add_use_case`, `generate_from_spec`,
   `add_authorization`, `inspect_project`) se revisa el kit y, si falta, se instala antes de ejecutar la herramienta. La revisión va primero: si ya
   está a la versión actual no se escribe nada; un agente ajeno con el mismo nombre no se reemplaza ni se mezcla (no se instala medio kit); y al
   actualizar se conservan los modelos que el equipo puso en los agentes. Una carpeta inexistente solo se crea con `scaffold_service`. Se
-  desactiva con `MIDD_NESTJS_AUTO_KIT=off`. La respuesta de la herramienta agrega un aviso para el usuario y para el agente. Las herramientas que
+  desactiva con `MIDD_NESTJS_AUTO_KIT=off`. `inspect_project` solo lee el proyecto, pero es la primera herramienta que llama el agente y por eso también dispara la instalación: su descripción lo dice (antes seguía diciendo "No escribe" y el agente lo presentó como una escritura inesperada). Un `generate_from_spec` con `dryRun=true` es solo un plan y no instala nada. La respuesta de la herramienta agrega un aviso para el usuario y para el agente. Las herramientas que
   solo leen o verifican nunca instalan.
 - **Lo que un MCP no puede hacer, y lo que no verifiqué.** Cambiar el agente del chat: en Kiro IDE se elige en el selector de la barra del chat
   (hay un agente preferido que persiste, según el changelog 1.0) y no encontré un archivo documentado que lo fije por código. Tampoco pude
@@ -202,14 +212,34 @@ conexión, que sale del motor (`DB_MSSQL_HOST`, `DB_MSSQL2_HOST`). Confirmado co
   suma a un dominio que ya existe y para el error de API externa. Es una suposición razonable: la persona la corrige si no se apega al caso (el
   género y la redacción pueden no encajar). El verificador avisa con `ERROR_CATALOG_PLACEHOLDER` si un catálogo conserva el texto de plantilla
   (servicios generados antes).
-- **Cuántas preguntas hace el agente.** En una API nueva, tres momentos: (1) **un solo mensaje con lo general de la API**: prefijo de la API,
-  prefijo de errores, base de datos (mssql, postgres, mysql o ninguna), autorización, Postman y `ARCHITECTURE.md`; (2) **por caso de uso**:
+- **Cuántas preguntas hace el agente.** En una API nueva, tres momentos: (1) **cinco preguntas generales, de una en una** (cada una en su
+  mensaje, con contador; la respuesta se guarda antes de la siguiente): prefijo de la API, prefijo de errores, base de datos (mssql, postgres,
+  mysql o none), autorización y Postman. Antes iban juntas en una lista y el usuario prefirió contestarlas una por una. Tras generar la base el
+  agente no se detiene: pide el primer caso de uso (antes cerraba con "sin pendientes"); (2) **por caso de uso**:
   "qué hace, qué recibe y qué devuelve", y de ahí el agente **deduce** si los datos salen de la base de datos (TypeORM), de una API externa o
   de un stored procedure; solo pregunta el dato que falta de ESE caso (nombre, verbo y ruta de la API; nombre del SP); (3) los valores reales
   del entorno, al preparar el servicio. No se pregunta: la conexión, los números de error, CORS, los límites de peticiones, el health, las
   rutas, la complejidad (nivel 0 por defecto), las reglas de negocio que el usuario no mencionó (`none: true`) ni el esquema (queda como TODO).
   Con "ninguna" base de datos, todos los casos son de API externa. Lo que se supone se lista como TODO al final. **No observado:** cuántas
   preguntas hace de verdad con modelos reales; falta la primera prueba dentro de Kiro.
+- **Primer contacto: instala, no genera.** Si una herramienta que genera (`scaffold_service`, `add_use_case`, `add_authorization`, `generate_from_spec`
+  sin `dryRun`) es la que instala el kit, esa llamada no genera nada: avisa que hay que elegir `middleware-generator` y repetir el pedido. El
+  motivo: un usuario que da todo el detalle desde el chat con el agente por defecto haría que ese agente generara directo, sin las preguntas ni el
+  flujo; y un MCP no puede cambiar el agente del chat. Por eso tampoco se implementó "generar directo si ya diste el detalle" en el primer contacto.
+  **Límite:** si la que instaló fue `inspect_project` (lo habitual, la llama primero el agente), una llamada posterior a una herramienta que genera ya
+  no se frena, porque el MCP no sabe qué agente tiene el chat; ahí solo sirve el aviso y la regla 0 de `AGENTS.md` ("si no eres
+  `middleware-generator`, no generes"), que funciona si Kiro incluye `AGENTS.md` en el contexto del chat (no lo verifiqué).
+- **Decisiones a la vista en `AGENTS.md`.** Inspirado en la forma de `lib-midd-mcp-architecture` (preguntar una vez y dejar la respuesta visible y editable),
+  el kit deja en `AGENTS.md` un bloque propio (`midd-nestjs-preferences`) con `AUTHORIZATION` y `POSTMAN`, ambas `undefined` al
+  inicio. El agente pregunta solo lo que está `undefined` y las guarda con `record_decision` (que acepta `authorization` y `postman`); `add_authorization` guarda la autorización por sí sola. Solo se leen valores cerrados, así que una línea editada a mano nunca
+  mete texto al agente. Lo que dice `AGENTS.md` manda sobre `docs/mcp-learnings.json`, que sigue guardando lo mismo como memoria. No se tomó de
+  aquel MCP la pregunta de idioma (el agente ya responde en el idioma del usuario) ni la del stack (aquí siempre NestJS).
+- **Datos obligatorios de `scaffold_service`: los valida la herramienta, no el esquema.** Con el esquema, un agente que llamaba la herramienta solo con
+  la carpeta recibía `MCP error -32602: Invalid arguments... Required at motor` (el servidor rechaza antes de ejecutar nada), y como el rechazo ocurre
+  antes de nuestro código, tampoco se instalaba el kit ni salía el aviso de elegir el agente. Ahora `prefijoApi`, `prefijoError` y `motor` son opcionales
+  en el esquema y la herramienta responde qué preguntar (solo lo que falta). Sigue sin haber valores por defecto: el usuario siempre responde.
+  **Pendiente de decidir:** `add_use_case` y `generate_from_spec` conservan el esquema estricto; si el agente por defecto también los llama sin
+  datos verá el mismo error crudo. No lo cambié porque ahí los datos sí salen del spec o del caso confirmado.
 - **Refactor sin conexión.** Si el proyecto no tiene ninguna, el MCP no la genera. Solo si el usuario la pide expresamente
   (`crearConexion=true`, o `connection.create: true` en el spec) se pregunta el motor y se crea completa, nombrada por el motor; pasar
   solo el motor no basta, para que un reflejo del agente no cree nada. El caso se avisa en el reporte porque el `app.module` es del proyecto.
@@ -232,8 +262,9 @@ de error del servicio y escribe, por módulo, el contrato `src/<modulo>/contract
 código, mismos archivos; la segunda corrida no reescribe nada) y no depende de que el modelo se acuerde.
 - **Se mantiene al día solo:** `add_use_case`, `generate_from_spec` (al final, porque los DTOs se rellenan después de sembrar
   cada caso) y `record_architecture` regeneran el contrato y el diagrama del módulo. Un fallo de documentación nunca rompe una generación.
+- **Siempre, sin preguntar:** `docs/ARCHITECTURE.md` con `architecture-beta`. Se deriva del código (como el contrato), así que no hay nada que decidir; la librería lo trata igual, como un documento derivado.
 - **Opt-in, el agente pregunta:** la colección de Postman (una para todo el servicio, una carpeta por módulo; al fusionar solo se
-  reemplaza la carpeta del módulo y se respetan las ajenas) y `docs/ARCHITECTURE.md` con `architecture-beta`. Una vez creados, se refrescan solos.
+  reemplaza la carpeta del módulo y se respetan las ajenas). Una vez creada, se refresca sola.
 - **Por qué sequenceDiagram + architecture-beta:** el de secuencia es el tipo estable para el flujo de una petición. `architecture-beta`
   (Mermaid 11.1+) sirve para la vista general; sus líneas `align` requieren 11.16+ y solo se emiten con 2 o más módulos. El C4 de
   Mermaid sigue siendo experimental y no se usa. Los tres diagramas generados se validaron con el parser de Mermaid 12.2.
@@ -263,7 +294,7 @@ fallan. El agente lo consulta con `get_learnings`, justo después de `get_rules`
   mismo, y con pocos módulos hay poca señal. Corregir una plantilla a partir de un error frecuente sigue siendo
   una decisión humana (esa es la parte entre repos, aún sin construir).
 
-**Credenciales fuera de los logs.** El `consumoHttp` del canon logueaba las cabeceras completas de un error,
+**Credenciales fuera de los logs.** El cliente HTTP del canon (`consumoHttp`, hoy `HttpClientService`) logueaba las cabeceras completas de un error,
 incluido `Authorization`. Ahora se redactan, y tampoco se loguea el body ni la query del request.
 
 **Límite explícito en el body parser.** Express usa 100 kb por defecto, por debajo de la política de 2 MB.
@@ -283,7 +314,7 @@ incluido `Authorization`. Ahora se redactan, y tampoco se loguea el body ni la q
 - Autorización contra un autorizador falso: 401 sin token, 200 con token válido, 403 con inválido,
   fail-closed con el autorizador caído (403), endpoint público sigue en 200, el token y el correlation id
   se reenvían, y de 8 peticiones solo 5 llegan al autorizador (el rate limit descarta el resto antes).
-- `consumoHttp` contra un servidor local: éxito, body JSON/HTML/vacío, 500 y 502, timeout, conexión
+- `HttpClientService` contra un servidor local: éxito, body JSON/HTML/vacío, 500 y 502, timeout, conexión
   rechazada y DNS inexistente, correlation id reenviado y token ausente de los logs.
 - El guard de concurrencia (C2), su liberación única y el anti-spoofing se probaron contra el código
   compilado, no por HTTP.
@@ -318,12 +349,12 @@ incluido `Authorization`. Ahora se redactan, y tampoco se loguea el body ni la q
    retrospectiva que lea las auditorías y `mcp-learnings.json` de varios repos y reporte qué reglas fallan más
    (solo IDs y conteos, sin nombres), para que una persona corrija plantillas y la mejora llegue por versión.
    Los avisos de errores frecuentes también están solo en inglés mientras el resto del texto del MCP está en español.
-3. **Limpieza de nombres en inglés** en la capa `shared` heredada (`consumoHttp`, `IconsumoHttp`,
-   `ErrorEventManagement`, `database-context`) y los mensajes en español de las plantillas del canon.
+3. **Nombres en inglés y kebab-case: hecho.** Archivos y carpetas en kebab-case con sufijo de tipo, clases en PascalCase (`HttpClientService`,
+   `IDatabaseCommonService`), sin `consumoHttp` ni `ErrorEventManagement`. Quedan los mensajes en español de las plantillas del canon.
 4. **Modernizar dependencias** de la plantilla: `eslint ^8` (deprecado), `@types/node ^20`,
    `reflect-metadata` distinto entre `package.base.json` y `package.snippet.json`; `engines.node >= 22`.
 5. **Compliance extra:** `API_DOC_*` (contrato `.api.md` y Postman) y reglas de dinero con `decimal.js`
    cuando el módulo maneje montos.
 6. **Logs de autorización:** una denegación normal (token inválido) hoy se registra como `ERROR` desde
-   `consumoHttp`; conviene bajarla a `WARN` para no ensuciar el log.
+   `HttpClientService`; conviene bajarla a `WARN` para no ensuciar el log.
 7. **Stack Java (Spring Boot):** reutilizar el flujo, el spec y el verificador; solo cambian plantillas y reglas.

@@ -41,9 +41,9 @@ registerPrompts(server)
 // --- Scaffolding grande -----------------------------------------------------
 server.tool(
   'scaffold_service',
-  'Genera la base de un servicio NestJS hexagonal nuevo: capa shared completa (JSON:API, errores, logger, config+Joi, database-context, utils), archivos de config/enforcement (eslint, prettier, Dockerfile, verify-standards, hooks husky), main.ts y app.module.ts canónicos. Escribe en projectRoot.',
+  'Genera la base de un servicio NestJS hexagonal nuevo: capa shared completa (JSON:API, errores, logger, config+Joi, database-context, utils), archivos de config/enforcement (eslint, prettier, Dockerfile, verify-standards, hooks husky), main.ts y app.module.ts canónicos. Escribe en projectRoot. OBLIGATORIOS y SIEMPRE se le preguntan al usuario (no se inventan ni tienen valor por defecto): prefijoApi, prefijoError y motor (mssql | postgres | mysql | none); si falta alguno la herramienta no genera nada y dice cuál preguntar.',
   scaffoldServiceSchema,
-  withKit({ creates: true, entry: true }, scaffoldService)
+  withKit({ creates: true, entry: true, gate: true }, scaffoldService)
 )
 
 // --- Vertical slice completa ------------------------------------------------
@@ -54,7 +54,7 @@ server.tool(
     'API EXTERNA: con adapterType="http" (apiExterna, rutaApi, metodoHttp) el caso consume una API con el fetch nativo y NO necesita base de datos, conexion ni motor; declara <API>_BASE_URL en config, Joi y .env.example. SP: con adapterType="sp" el wiring es quirúrgico — apunta el módulo al .sp.adapter y quita del forFeature SOLO la entidad de ese caso, preservando las de los casos TypeORM. ' +
     'INFRA (refactor): usa infraStyle="project" + infraRoot (p.ej. "common") para que los imports de infra apunten a la carpeta del proyecto; aun así, concilia a mano los NOMBRES de clase (ResponseJsonApiBase/GenericException de los templates vs los del proyecto).',
   addUseCaseSchema,
-  withKit({}, addUseCase)
+  withKit({ gate: true }, addUseCase)
 )
 
 // --- Aprendizajes por repo (consultivos; nunca cambian las reglas base) ----
@@ -90,7 +90,7 @@ server.tool(
   'add_authorization',
   'OPT-IN. Agrega la autorización del borde HTTP al servicio: puerto agnóstico IAuthorizationVerifier + adapter por defecto (API de autorización) + Guard GLOBAL, secure-by-default (todo endpoint protegido salvo @SkipAuthorization()) y FAIL-CLOSED (denegado o autorizador inalcanzable = 403). El agente DEBE PREGUNTAR al usuario si quiere activarla; nunca decide solo ni la omite en silencio. Se crea UNA vez por servicio en src/shared/authorization. Parchea ConfigurationVariables, el schema Joi, .env.example y app.module (la registra DESPUÉS de SecurityModule para que el rate limit corra primero). Idempotente.',
   addAuthorizationSchema,
-  withKit({}, addAuthorization)
+  withKit({ gate: true }, addAuthorization)
 )
 
 // --- Generación declarativa desde spec -------------------------------------
@@ -98,7 +98,7 @@ server.tool(
   'generate_from_spec',
   'Genera un módulo hexagonal a partir de un middleware.spec.yaml declarativo (agnóstico de dominio: module/entity/use_cases los define el usuario en el spec). Soporta casos de uso con N métodos por puerto (inbound/outbound). Con dryRun=true (default) valida el spec y devuelve el PLAN de generación (casos, métodos, archivos) SIN escribir disco; con dryRun=false genera el slice por cada caso reutilizando add_use_case. Respeta las reglas de get_rules.',
   generateFromSpecSchema,
-  withKit({ entry: true }, generateFromSpec)
+  withKit({ entry: true, gate: true, skip: (a) => a.dryRun === true }, generateFromSpec)
 )
 
 // --- Inventario + auditoría de arquitectura --------------------------------
@@ -112,7 +112,7 @@ server.tool(
 // --- Documentacion de la API generada desde el codigo ----------------------
 server.tool(
   'generate_api_docs',
-  'Genera la documentacion de la API LEYENDO EL CODIGO REAL (controllers, DTOs, catalogos de error), nunca de memoria. Siempre: contrato por modulo (src/<modulo>/contracts/<modulo>.api.md), diagrama Mermaid sequenceDiagram por modulo (src/<modulo>/diagrams/<modulo>.flow.mmd) e indice docs/api/README.md. Opt-in (el agente PREGUNTA al usuario): postman=true crea docs/api/middleware.postman_collection.json (una coleccion, una carpeta por modulo, fusion sin tocar las demas) y architecture=true crea docs/ARCHITECTURE.md con un diagrama Mermaid architecture-beta. Idempotente y determinista; add_use_case y record_architecture la refrescan solos.',
+  'Genera la documentacion de la API LEYENDO EL CODIGO REAL (controllers, DTOs, catalogos de error), nunca de memoria. Siempre: contrato por modulo (src/<modulo>/contracts/<modulo>.api.md), diagrama Mermaid sequenceDiagram por modulo (src/<modulo>/diagrams/<modulo>.flow.mmd) e indice docs/api/README.md, mas docs/ARCHITECTURE.md (diagrama Mermaid architecture-beta; siempre, no se pregunta). Opt-in (el agente PREGUNTA al usuario): postman=true crea docs/api/middleware.postman_collection.json (una coleccion, una carpeta por modulo, fusion sin tocar las demas). Idempotente y determinista; add_use_case y record_architecture la refrescan solos.',
   generateApiDocsSchema,
   generateApiDocsTool
 )
@@ -131,7 +131,7 @@ server.tool(
 )
 server.tool(
   'inspect_project',
-  'Descubrimiento de SOLO LECTURA del proyecto destino (para el Flujo 2 refactor): detecta la convención de carpetas/case de dominios, la forma de la conexión TypeORM (forRoot por defecto vs conexiones nombradas, replication), la infraestructura transversal ya existente (JSON:API response, tipo de error, middleware, ConfigurationVariables) que debe REUSARSE, y los módulos presentes. Devuelve reglas a respetar antes de generar nada. No escribe.',
+  'Descubrimiento del proyecto destino (para el Flujo 2 refactor): detecta la convención de carpetas/case de dominios, la forma de la conexión TypeORM (forRoot por defecto vs conexiones nombradas, replication), la infraestructura transversal ya existente (JSON:API response, tipo de error, middleware, ConfigurationVariables) que debe REUSARSE, y los módulos presentes. Devuelve reglas a respetar antes de generar nada. Sobre el proyecto solo LEE; lo unico que puede escribir es la instalacion automatica del kit de agentes del MCP (.kiro/agents, agentic/templates y la seccion de AGENTS.md) la primera vez que se usa una herramienta en un repo, que es lo que el usuario pidio al configurar el MCP y se desactiva con MIDD_NESTJS_AUTO_KIT=off. Si lo instala, avisa que agente seleccionar.',
   inspectProjectSchema,
   withKit({ entry: true }, inspectProjectTool)
 )

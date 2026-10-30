@@ -50,7 +50,9 @@ test('install on an empty repo creates the five files, stamped with the MCP vers
       assert.ok(!/__MCP_VERSION__|__MODEL_|__CHAIN_/.test(text), `${rel} has an unreplaced placeholder`)
     }
     assert.ok(read(root, 'AGENTS.md').startsWith(AGENTS_BEGIN))
-    assert.ok(read(root, 'AGENTS.md').trimEnd().endsWith(AGENTS_END))
+    // the managed section is followed by the block of answers, which has its own markers and is never replaced
+    assert.ok(read(root, 'AGENTS.md').includes(AGENTS_END))
+    assert.ok(read(root, 'AGENTS.md').trimEnd().endsWith('<!-- END midd-nestjs-preferences -->'))
   } finally {
     cleanup(root)
   }
@@ -242,7 +244,8 @@ test('AGENTS.md: a stale block (older MCP version) is replaced in place, nothing
     assert.equal(statuses(installAgenticKit({ projectRoot: root, overwrite: false }))['AGENTS.md'], 'updated')
     const text = read(root, 'AGENTS.md')
     assert.ok(text.startsWith(head))
-    assert.ok(text.endsWith(tail))
+    assert.ok(text.includes(tail), 'the text after our section is untouched')
+    assert.ok(text.indexOf(tail) < text.indexOf('<!-- BEGIN midd-nestjs-preferences'), 'the block of answers goes at the end, after what is theirs')
     assert.ok(!text.includes('seccion vieja'))
     assert.ok(text.includes(mcpVersion()))
   } finally {

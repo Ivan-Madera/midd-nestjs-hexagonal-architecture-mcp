@@ -1,4 +1,5 @@
 import type { AdapterType } from './adapters.js'
+import { domainFolder, toPascal } from './names.js'
 /**
  * Merge inteligente de los módulos de un dominio cuando se añade un caso de uso
  * adicional a un dominio YA existente.
@@ -19,11 +20,13 @@ const read = (p: string) => (existsSync(p) ? readFileSync(p, 'utf8') : '')
 export type CaseNames = {
   caso: string // PascalCase, p.ej. "RetrieveCategory"
   casoCamel: string // camelCase, p.ej. "retrieveCategory"
+  casoKebab: string // kebab-case (nombre de archivo), p.ej. "retrieve-category"
   casoUpper: string // UPPER_SNAKE, p.ej. "RETRIEVE_CATEGORY"
   entidad: string // PascalCase, p.ej. "Category"
+  entidadKebab: string // kebab-case (nombre de archivo), p.ej. "category"
   adapterClass: string // p.ej. "RetrieveCategoryAdapter"
-  adapterImportPath: string // p.ej. "./adapters/retrieveCategory.typeorm.adapter"
-  adapterImportPathFromRoot: string // p.ej. "./infrastructure/adapters/retrieveCategory.typeorm.adapter"
+  adapterImportPath: string // p.ej. "./adapters/retrieve-category.typeorm.adapter"
+  adapterImportPathFromRoot: string // p.ej. "./infrastructure/adapters/retrieve-category.typeorm.adapter"
   controllerClass: string // p.ej. "RetrieveCategoryController"
   conexion: string // p.ej. "Catalog"
   adapterType: AdapterType
@@ -106,7 +109,7 @@ function patchHttpServerModule(file: string, n: CaseNames): boolean {
   const before = content
   content = addImport(
     content,
-    `import { ${n.controllerClass} } from './controllers/${n.casoCamel}.controller'`
+    `import { ${n.controllerClass} } from './controllers/${n.casoKebab}.controller'`
   )
   content = appendToArray(content, 'controllers', n.controllerClass)
   if (content === before) return false
@@ -114,7 +117,7 @@ function patchHttpServerModule(file: string, n: CaseNames): boolean {
   return true
 }
 
-// --- infrastructure.<dom>.module.ts -----------------------------------------
+// --- <dom>.infrastructure.module.ts -----------------------------------------
 function patchInfrastructureModule(file: string, n: CaseNames): boolean {
   let content = read(file)
   if (!content) return false
@@ -130,7 +133,7 @@ function patchInfrastructureModule(file: string, n: CaseNames): boolean {
     content = addImport(content, "import { TypeOrmModule } from '@nestjs/typeorm'")
     content = addImport(
       content,
-      `import { ${n.entidad}EntityConfiguration } from './sql-database/entities/${n.entidad}.entity'`
+      `import { ${n.entidad}EntityConfiguration } from './sql-database/entities/${n.entidadKebab}.entity'`
     )
     // Añade la entidad a un forFeature existente, o crea uno nuevo en imports.
     // El argumento de conexión depende de connectionStyle: 'named' añade
@@ -189,17 +192,17 @@ function patchRootModule(file: string, n: CaseNames): boolean {
   return true
 }
 
-// --- core.<dom>.module.ts ---------------------------------------------------
+// --- <dom>.core.module.ts ---------------------------------------------------
 function patchCoreModule(file: string, n: CaseNames): boolean {
   let content = read(file)
   if (!content) return false
   const before = content
 
   // 1) imports de los símbolos del caso.
-  content = addImport(content, `import { I${n.caso}Repository } from './domain/ports/outbound/I${n.caso}Repository'`)
-  content = addImport(content, `import { I${n.caso}Service } from './domain/ports/inbound/I${n.caso}Service'`)
-  content = addImport(content, `import { ${n.caso}DomainService } from './domain/services/${n.casoCamel}.domain.service'`)
-  content = addImport(content, `import { ${n.caso}ApplicationService } from './application/services/${n.casoCamel}.application'`)
+  content = addImport(content, `import { I${n.caso}Repository } from './domain/ports/outbound/${n.casoKebab}.outbound.port'`)
+  content = addImport(content, `import { I${n.caso}Service } from './domain/ports/inbound/${n.casoKebab}.inbound.port'`)
+  content = addImport(content, `import { ${n.caso}DomainService } from './domain/services/${n.casoKebab}.domain.service'`)
+  content = addImport(content, `import { ${n.caso}ApplicationService } from './application/services/${n.casoKebab}.application'`)
 
   const appToken = `${n.casoUpper}_APPLICATION`
   const inboundToken = `${n.casoUpper}_SERVICE_PORT_INBOUND`
@@ -277,10 +280,10 @@ export function registerDomainInAppModule(opts: {
   let content = read(file)
   if (!content) return false
   const before = content
-  // Clase en PascalCase, carpeta/archivo en lowercase (consistente con destRoot
+  // Clase en PascalCase, carpeta/archivo en kebab-case (consistente con destRoot
   // y buildPlaceholderMap). No depende del case con que llegue `dominio`.
-  const dominioPascal = dominio.charAt(0).toUpperCase() + dominio.slice(1)
-  const domLower = dominio.toLowerCase()
+  const dominioPascal = toPascal(dominio)
+  const domLower = domainFolder(dominio)
   const moduleClass = `${dominioPascal}Module`
   const importPath = `./${domLower}/${domLower}.module`
 
@@ -305,14 +308,14 @@ export function mergeCaseIntoDomain(opts: {
   names: CaseNames
 }): MergeResult {
   const { projectRoot, dominio, names } = opts
-  const domRoot = join(projectRoot, 'src', dominio)
-  const domLower = dominio.toLowerCase()
+  const domLower = domainFolder(dominio)
+  const domRoot = join(projectRoot, 'src', domLower)
   const patched: string[] = []
   const warnings: string[] = []
 
   const targets: Array<[string, (f: string, n: CaseNames) => boolean]> = [
     [join(domRoot, `infrastructure/http-server/http-server.module.ts`), patchHttpServerModule],
-    [join(domRoot, `infrastructure/infrastructure.${domLower}.module.ts`), patchInfrastructureModule],
+    [join(domRoot, `infrastructure/${domLower}.infrastructure.module.ts`), patchInfrastructureModule],
     [join(domRoot, `${domLower}.module.ts`), patchRootModule],
     [join(domRoot, `core/${domLower}.core.module.ts`), patchCoreModule]
   ]

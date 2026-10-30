@@ -1,6 +1,6 @@
 import { randomUUID } from 'node:crypto'
 import { NextFunction, Request, Response } from 'express'
-import { CORRELATION_HEADER, runWithCorrelationId } from './correlationContext'
+import { CORRELATION_HEADER, runWithCorrelationId } from './correlation-context'
 
 // Only safe characters are accepted from the caller: anything else could forge log lines.
 const SAFE_CORRELATION_ID = /^[A-Za-z0-9._-]{1,128}$/

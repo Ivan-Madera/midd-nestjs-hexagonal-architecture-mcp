@@ -11,6 +11,8 @@
 import { join } from 'node:path'
 import { existsSync, readFileSync, writeFileSync } from 'node:fs'
 import { ENV_SECTIONS, addEnvEntries } from './envFile.js'
+import { domainFolder } from './names.js'
+import { configFile } from './projectFiles.js'
 
 const read = (p: string) => (existsSync(p) ? readFileSync(p, 'utf8') : '')
 
@@ -50,19 +52,19 @@ function removeEntityFromForFeature(content: string, entityConfig: string): stri
 export function patchDomainModules(opts: {
   projectRoot: string
   dominio: string
-  caso: string // camelCase del caso (nombre de archivo del adapter)
+  caso: string // kebab-case del caso (nombre de archivo del adapter)
   entidad?: string // PascalCase; para quitar SOLO su entidad del forFeature
   adapter?: 'sp' | 'http' // a que adapter apuntan los modulos (sp por defecto)
 }): string[] {
   const { projectRoot, dominio, caso, entidad } = opts
   const adapter = opts.adapter ?? 'sp'
   const patched: string[] = []
-  const domLower = dominio.toLowerCase()
+  const domLower = domainFolder(dominio)
   const domRoot = join(projectRoot, 'src', domLower)
 
   const files = [
     join(domRoot, `${domLower}.module.ts`),
-    join(domRoot, `infrastructure/infrastructure.${domLower}.module.ts`)
+    join(domRoot, `infrastructure/${domLower}.infrastructure.module.ts`)
   ]
 
   for (const file of files) {
@@ -118,10 +120,7 @@ function patchConfigurationVariables(opts: {
   envVarSp: string
 }): string | null {
   const { projectRoot, nombreSp, envVarSp } = opts
-  const file = join(
-    projectRoot,
-    'src/shared/infrastructure/config/ConfigurationVariables.ts'
-  )
+  const file = configFile(projectRoot, 'variables')
   let content = read(file)
   if (!content) return null
   if (new RegExp(`\\b${nombreSp}\\s*:`).test(content)) return null // ya declarado
@@ -139,7 +138,7 @@ function patchConfigurationVariables(opts: {
 export function patchJoiSchema(opts: { projectRoot: string; envVarSp: string; rule?: string }): string | null {
   const { projectRoot, envVarSp } = opts
   const rule = opts.rule ?? 'Joi.string().required()'
-  const file = join(projectRoot, 'src/shared/infrastructure/config/joiSchema.ts')
+  const file = configFile(projectRoot, 'joi')
   let content = read(file)
   if (!content) return null
   if (new RegExp(`\\b${envVarSp}\\s*:`).test(content)) return null
@@ -191,7 +190,7 @@ function patchEnvFiles(opts: { projectRoot: string; envVarSp: string }): string[
 export function wireStoredProcedure(opts: {
   projectRoot: string
   dominio: string
-  casoCamel: string
+  casoKebab: string
   nombreSp: string
   envVarSp: string
   entidad?: string // PascalCase; para quitar SOLO su entidad del forFeature
@@ -209,7 +208,7 @@ export function wireStoredProcedure(opts: {
     patched.push(...patchDomainModules({
       projectRoot: opts.projectRoot,
       dominio: opts.dominio,
-      caso: opts.casoCamel,
+      caso: opts.casoKebab,
       entidad: opts.entidad
     }))
   }

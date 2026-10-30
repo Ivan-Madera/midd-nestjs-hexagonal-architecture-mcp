@@ -25,36 +25,85 @@ async function session(env = {}) {
   return client
 }
 
-const scaffold = (client, projectRoot) =>
+const scaffoldOnce = (client, projectRoot) =>
   client.callTool({ name: 'scaffold_service', arguments: { projectRoot, motor: 'none', prefijoApi: 'midd-demo', prefijoError: 'DEMO' } })
+
+// On a repo without the kit the first call is the gate (it installs the kit and generates nothing): run it again.
+const scaffold = async (client, projectRoot) => {
+  const first = await scaffoldOnce(client, projectRoot)
+  return text(first).includes('TODAVIA NO GENERE NADA') ? scaffoldOnce(client, projectRoot) : first
+}
 
 const tmp = () => mkdtempSync(join(tmpdir(), 'midd-autokit-'))
 const stamp = (root) => AGENTS.map((a) => statSync(agentPath(root, a)).mtimeMs)
 
-test('the first tool that works on a repo installs the kit and says how to select the agent', async () => {
+test('first contact: the kit is installed, NOTHING is generated, and the user is told to pick the agent', async () => {
   const client = await session()
   const root = tmp()
   try {
-    const result = await scaffold(client, root)
+    const result = await scaffoldOnce(client, root)
     assert.notEqual(result.isError, true, text(result))
-    // the tool answers what it always answered; the notice comes after
-    assert.match(result.content[0].text, /Base del servicio generada/)
-    const notice = result.content[result.content.length - 1].text
+    assert.equal(result.content.length, 1)
+    const notice = result.content[0].text
     assert.match(notice, /KIT DEL MCP INSTALADO automaticamente/)
+    assert.match(notice, /TODAVIA NO GENERE NADA/)
     assert.match(notice, /PARA EL USUARIO/)
     assert.match(notice, /selector de agentes/)
     assert.match(notice, /middleware-generator/)
-    assert.match(notice, /PARA EL AGENTE/)
+    assert.match(notice, /PARA EL AGENTE: no llames otra vez esta herramienta/)
+    assert.doesNotMatch(notice, /continua solo si el te lo confirma/, 'the gate and the generic reminder do not contradict each other')
+    assert.equal(existsSync(join(root, 'src')), false, 'the service was not generated')
+    assert.equal(existsSync(join(root, 'package.json')), false)
     for (const name of AGENTS) {
       const file = readFileSync(agentPath(root, name), 'utf8')
-      assert.match(file, new RegExp(`managed by midd-nestjs-hexagonal-architecture-mcp v${mcpVersion().replace(/\./g, '\\.')}`))
+      assert.match(file, new RegExp('managed by midd-nestjs-hexagonal-architecture-mcp v' + mcpVersion().replace(/\./g, '\\.')))
       assert.doesNotMatch(file, /__MODEL_|__MCP_VERSION__/, 'placeholders are resolved')
     }
     assert.ok(existsSync(join(root, 'agentic/templates/middleware.spec.template.yaml')))
-    assert.match(readFileSync(join(root, 'AGENTS.md'), 'utf8'), /BEGIN midd-nestjs-hexagonal/)
+    const agents = readFileSync(join(root, 'AGENTS.md'), 'utf8')
+    assert.match(agents, /BEGIN midd-nestjs-hexagonal/)
+    assert.match(agents, /AUTHORIZATION: undefined/, 'the answers block is there from the start, all undefined')
+
+    // once the kit exists the same call runs (the user switched agent, or knows what he does)
+    const again = await scaffoldOnce(client, root)
+    assert.match(again.content[0].text, /Base del servicio generada/)
+    assert.ok(existsSync(join(root, 'src')))
   } finally {
     await client.close()
     rmSync(root, { recursive: true, force: true })
+  }
+})
+
+test('every tool that generates is gated on first contact; a plan and a read are not', async () => {
+  const client = await session()
+  try {
+    const calls = {
+      add_use_case: (root) => ({ projectRoot: root, dominio: 'rates', caso: 'RetrieveRate', entidad: 'Rate', metodo: 'retrieveRate', param: 'currency', accion: 'retrieveRate', prefijoError: 'DEMO', adapterType: 'http', apiExterna: 'ExchangeRates', rutaApi: '/rates', mode: 'greenfield', connectionStyle: 'named', infraStyle: 'dataset' }),
+      add_authorization: (root) => ({ projectRoot: root, authorizationApiUrl: 'https://auth.example.com' }),
+      generate_from_spec: (root) => ({ projectRoot: root, specPath: join(root, 'missing.yaml'), mode: 'greenfield', dryRun: false })
+    }
+    for (const [name, args] of Object.entries(calls)) {
+      const root = tmp()
+      try {
+        const result = await client.callTool({ name, arguments: args(root) })
+        assert.match(text(result), /TODAVIA NO GENERE NADA/, name)
+        assert.equal(existsSync(join(root, 'src')), false, name + ' wrote nothing')
+        assert.ok(existsSync(agentPath(root, 'middleware-generator')), name + ' installed the kit')
+      } finally {
+        rmSync(root, { recursive: true, force: true })
+      }
+    }
+    // reading is not gated
+    const root = tmp()
+    try {
+      const inspect = await client.callTool({ name: 'inspect_project', arguments: { projectRoot: root } })
+      assert.doesNotMatch(text(inspect), /TODAVIA NO GENERE NADA/)
+      assert.match(text(inspect), /KIT DEL MCP INSTALADO/)
+    } finally {
+      rmSync(root, { recursive: true, force: true })
+    }
+  } finally {
+    await client.close()
   }
 })
 
@@ -151,6 +200,46 @@ test('MIDD_NESTJS_AUTO_KIT=off turns the automatic installation off', async () =
   }
 })
 
+test('a dry run only plans: it installs nothing; the real run does', async () => {
+  const client = await session()
+  const root = tmp()
+  try {
+    mkdirSync(join(root, 'agentic/specs/rates/input/specs'), { recursive: true })
+    const spec = join(root, 'agentic/specs/rates/input/specs/middleware.spec.yaml')
+    writeFileSync(
+      spec,
+      [
+        'module: rates', 'entity: Rate', 'description: x', 'stack: nestjs', 'error_prefix: RATES',
+        'use_cases:', '  - name: RetrieveRate', '    action: retrieveRate', '    resource_type: rate', '    adapter: http', '    api: ExchangeRates',
+        '    methods:', '      - { name: retrieveRate, request: RetrieveRateRequest, response: Rate, http: { method: GET, path: /rates } }',
+        'dtos:', '  input: { currency: string }', '  output: { value: number }',
+        'business_rules: { none: true, rules: [] }', 'complexity: { level: 0, signals: [] }', ''
+      ].join('\n')
+    )
+    const plan = await client.callTool({ name: 'generate_from_spec', arguments: { projectRoot: root, specPath: spec, mode: 'greenfield', dryRun: true } })
+    assert.notEqual(plan.isError, true, text(plan))
+    assert.equal(plan.content.length, 1, 'no kit notice on a plan')
+    assert.equal(existsSync(join(root, '.kiro')), false, 'a dry run wrote nothing')
+    assert.equal(existsSync(join(root, 'AGENTS.md')), false)
+  } finally {
+    await client.close()
+    rmSync(root, { recursive: true, force: true })
+  }
+})
+
+test('inspect_project says in its description that it installs the kit, so nobody is told it never writes', async () => {
+  const client = await session()
+  try {
+    const tools = (await client.listTools()).tools
+    const description = tools.find((x) => x.name === 'inspect_project').description
+    assert.doesNotMatch(description, /No escribe\.|SOLO LECTURA/)
+    assert.match(description, /instalacion automatica del kit de agentes/)
+    assert.match(description, /MIDD_NESTJS_AUTO_KIT=off/)
+  } finally {
+    await client.close()
+  }
+})
+
 test('only a tool that CREATES a service may create its folder; a typo in any other never leaves a stray one', async () => {
   const client = await session()
   const base = tmp()
@@ -202,4 +291,45 @@ test('ensureAgenticKit: states, and the switch', () => {
   assert.equal(autoKitEnabled({}), true)
   for (const off of ['off', 'OFF', '0', 'false', 'no']) assert.equal(autoKitEnabled({ MIDD_NESTJS_AUTO_KIT: off }), false, off)
   assert.equal(autoKitEnabled({ MIDD_NESTJS_AUTO_KIT: 'on' }), true)
+})
+
+test('scaffold_service called with only the folder (what a default agent does): first the kit and the agent notice, then a message that says what to ask', async () => {
+  const client = await session()
+  const root = tmp()
+  try {
+    // 1) no kit yet: it installs and tells the user to pick the agent; it does not fail with a schema error
+    const first = await client.callTool({ name: 'scaffold_service', arguments: { projectRoot: root } })
+    assert.notEqual(first.isError, true, text(first))
+    assert.match(text(first), /TODAVIA NO GENERE NADA/)
+    assert.ok(existsSync(agentPath(root, 'middleware-generator')))
+
+    // 2) kit there: a clear message with the three questions, in one block, and nothing written
+    const second = await client.callTool({ name: 'scaffold_service', arguments: { projectRoot: root } })
+    assert.equal(second.isError, true)
+    const message = text(second)
+    assert.match(message, /faltan datos para crear la API \(prefijoApi, prefijoError, motor\)/)
+    assert.match(message, /No los inventes ni uses un valor por defecto: preguntaselos al usuario, todos en un solo mensaje/)
+    assert.match(message, /1\. prefijoApi: prefijo de la API en kebab-case\. Por ejemplo, midd-catalog\./)
+    assert.match(message, /2\. prefijoError: prefijo de errores de la API en MAYUSCULAS\. Por ejemplo, CATALOG\./)
+    assert.match(message, /3\. motor: base de datos de la API: mssql, postgres, mysql o none/)
+    assert.match(message, /middleware-generator hace estas preguntas por ti/)
+    assert.equal(existsSync(join(root, 'src')), false)
+    assert.equal(existsSync(join(root, 'package.json')), false)
+    assert.doesNotMatch(message, /-32602|Invalid arguments|Required at/, 'no schema error text')
+
+    // 3) only what is missing is asked
+    const partial = await client.callTool({ name: 'scaffold_service', arguments: { projectRoot: root, prefijoApi: 'midd-demo', motor: 'none' } })
+    assert.equal(partial.isError, true)
+    assert.match(text(partial), /faltan datos para crear la API \(prefijoError\)/)
+    assert.doesNotMatch(text(partial), /prefijoApi: prefijo|motor: base de datos/)
+    assert.equal(existsSync(join(root, 'src')), false)
+
+    // 4) with the three answers it generates
+    const full = await client.callTool({ name: 'scaffold_service', arguments: { projectRoot: root, prefijoApi: 'midd-demo', prefijoError: 'DEMO', motor: 'none' } })
+    assert.notEqual(full.isError, true, text(full))
+    assert.match(text(full), /Base del servicio generada/)
+  } finally {
+    await client.close()
+    rmSync(root, { recursive: true, force: true })
+  }
 })

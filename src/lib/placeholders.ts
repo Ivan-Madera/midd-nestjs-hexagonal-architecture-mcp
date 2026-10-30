@@ -1,5 +1,6 @@
 import { envVarApiBaseUrl, httpCallExpression, isHttpVerb } from './adapters.js'
 import { capitalize, entityText, formatErrorNumber } from './errorCodes.js'
+import { domainFolder, toKebab, toPascal } from './names.js'
 /**
  * Sustitución de placeholders case-sensitive.
  *
@@ -66,7 +67,7 @@ export function buildPlaceholderMap(input: {
   // para que los nombres de CLASE no dependan del case con que llegó `dominio`
   // (p.ej. "setups" -> "Setups"), evitando el choque con carpetas lowercase en
   // sistemas de archivos case-insensitive (Windows).
-  const pascal = (s: string) => s.charAt(0).toUpperCase() + s.slice(1)
+  const pascal = toPascal
   const upperSnake = (s: string) =>
     s
       .replace(/([a-z0-9])([A-Z])/g, '$1_$2')
@@ -76,7 +77,7 @@ export function buildPlaceholderMap(input: {
   // Nombre de dominio para CLASES (PascalCase) separado del de CARPETA/RUTA
   // (lowercase). Un único arg `dominio` ya no fuerza ambos al mismo case.
   const dominioClase = pascal(input.dominio)
-  const dominioCarpeta = input.dominio.toLowerCase()
+  const dominioCarpeta = domainFolder(input.dominio)
 
   const attributes = input.attributes ?? `${input.caso}Attributes`
   const respuesta = input.respuesta ?? input.entidad
@@ -111,6 +112,12 @@ export function buildPlaceholderMap(input: {
   // El motor de reemplazo ya ordena por longitud; aquí solo definimos valores.
   return {
     // Identificadores de código (y nombres de archivo)
+    // File and folder names are kebab-case; the identifiers keep PascalCase / camelCase.
+    __dominioKebab__: dominioCarpeta,
+    __casoKebab__: toKebab(input.caso),
+    __entidadKebab__: toKebab(input.entidad),
+    __requestKebab__: toKebab(request),
+    __conexionKebab__: toKebab(input.conexion),
     __Dominio__: dominioClase,
     __dominio__: camel(dominioClase),
     __CASO__: upperSnake(input.caso),

@@ -2,7 +2,7 @@ import { CanActivate, ExecutionContext, Inject, Injectable } from '@nestjs/commo
 import { Reflector } from '@nestjs/core'
 import { Request } from 'express'
 import { AUTH_ERRORS, authorizationException } from './authorization.errors'
-import { IAuthorizationVerifier } from './domain/IAuthorizationVerifier'
+import { IAuthorizationVerifier } from './domain/authorization-verifier.port'
 import { SKIP_AUTHORIZATION } from './skip-authorization.decorator'
 import { AUTHORIZATION_VERIFIER } from './authorization.tokens'
 

@@ -13,8 +13,8 @@
 # ═══════════════════════════════════════════════════════════════════════════
 
 # ─── Identidad (la defines tú; sin valores por defecto amarrados) ──────────
-module: ""              # kebab-case, p.ej. "catalog" (carpeta: src/<module-lowercase>/)
-entity: ""              # PascalCase, p.ej. "Product" (entidad de dominio principal)
+module: ""              # kebab-case EN INGLES, p.ej. "catalog" o "store-configuration" (carpeta: src/<module>/)
+entity: ""              # PascalCase EN INGLES, p.ej. "Product" (entidad de dominio principal)
 description: ""         # una línea: para qué sirve el módulo (el requerimiento)
 
 # ─── Stack (único valor soportado por este MCP) ───────────────────────────

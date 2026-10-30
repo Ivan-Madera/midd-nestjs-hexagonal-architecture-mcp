@@ -82,7 +82,7 @@ src/
 │   ├── errorCodes.ts        # códigos PREFIJO-SLUG-NNN: 001-999, secuencia por prefijo
 │   ├── caseErrors.ts        # entradas de error de un caso que se suma a un dominio que ya existe
 │   ├── envFile.ts           # .env.example por secciones
-│   ├── env.ts               # .env.example derivado del joiSchema
+│   ├── env.ts               # .env.example derivado de joi-schema.ts
 │   ├── apiDocs.ts           # documentación leída del código (contrato, diagramas, Postman, arquitectura)
 │   ├── inventory.ts         # inventario (architecture-inventory.json) + auditoría (docs/audits)
 │   ├── learnings.ts         # aprendizaje por repo (consultivo; docs/mcp-learnings.json)
@@ -177,7 +177,7 @@ flowchart LR
 ## Capacidades
 
 ### Generación (greenfield)
-- `scaffold_service` siembra la **capa `shared` completa** (JSON:API, errores, logger, config + Joi, seguridad, health, utils), los archivos de **config/enforcement** (eslint, prettier, Dockerfile, verify-standards, hooks husky), `main.ts`, `app.module.ts`, un `.gitignore` que excluye `.env` (nunca pisa el del proyecto) y el `.env.example` por secciones derivado del joiSchema.
+- `scaffold_service` siembra la **capa `shared` completa** (JSON:API, errores, logger, config + Joi, seguridad, health, utils), los archivos de **config/enforcement** (eslint, prettier, Dockerfile, verify-standards, hooks husky), `main.ts`, `app.module.ts`, un `.gitignore` que excluye `.env` (nunca pisa el del proyecto) y el `.env.example` por secciones derivado de joi-schema.ts.
 - **Motor de base de datos:** el agente lo pregunta (`mssql`, `postgres`, `mysql`) y de la respuesta salen el driver, las opciones de TypeORM y el dialecto del stored procedure (mssql `EXEC`, mysql `CALL`; **el área no usa stored procedures en PostgreSQL**, el MCP los rechaza). Con `none` (el servicio no usa base de datos) no se genera ninguna conexión, módulo, variable `DB_*` ni driver.
 - **Conexiones:** su nombre no se pregunta, sale del motor (`Mssql`, `Postgres`, `Mysql`); una adicional del mismo motor se numera (`Mssql2`, variables `DB_MSSQL2_*`).
 
@@ -199,10 +199,10 @@ flowchart LR
 - El MCP escribe el `message`, el `title` y el `suggestedActions` de cada error **en español, a partir de la entidad** (`LockType` → "Lock type no encontrado.", "No se encontró lock type con los parámetros enviados."), también para un caso que se suma a un dominio existente y para el error de API externa. Es una suposición razonable: la persona la corrige si no se apega al caso. `verify_standards` avisa con `ERROR_CATALOG_PLACEHOLDER` si un catálogo conserva el texto de plantilla.
 
 ### Códigos de error
-- Formato `<PREFIJO>-<SLUG>-<NNN>`, por ejemplo `CATALOG-PRODUCTNOTFOUND-001`. El número va de 001 a 999 y es una secuencia **por prefijo** que asigna el MCP leyendo el código existente: dos errores nunca comparten número.
+- Formato `<PREFIJO>-<SLUG>-<NNN>`, por ejemplo `CATALOG-PRODUCTNOTFOUND-001`. El número va de 001 a 999 y es una secuencia **por prefijo** que asigna el MCP leyendo el código existente: dos errores nunca comparten número. El slug no lleva guiones. Cada catálogo trae su error por defecto `<PREFIJO>-GENERICERROR-000` (el filtro global usa `SERVICE-GENERICERROR-000`).
 
 ### Documentación de la API
-- `generate_api_docs` lee el código y escribe el contrato por módulo, un diagrama Mermaid de secuencia por módulo y el índice; opcionalmente la colección de Postman y `docs/ARCHITECTURE.md` (`architecture-beta`). Se mantiene al día en cada generación.
+- `generate_api_docs` lee el código y escribe el contrato por módulo, un diagrama Mermaid de secuencia por módulo y el índice; `docs/ARCHITECTURE.md` (`architecture-beta`, siempre, no se pregunta) y, opcionalmente, la colección de Postman. Se mantiene al día en cada generación.
 
 ### Verificación y descubrimiento
 - `verify_standards` corre el verificador del servicio generado con **reglas de ID estable**: naming, seguridad HTTP, correlation ID, `@Version`, `.env.example` y defaults de Joi, autorización, health, conexiones de BD, SP declarado, reglas de código (sin `console.log`, `process.env` directo, `any`, dinero como float, HTTP en el core...), dependencias prohibidas, documentación desactualizada, códigos de error repetidos y `.env` sin ignorar por git.
@@ -210,7 +210,8 @@ flowchart LR
 
 ### Cuántas preguntas hace el agente
 En una API nueva, tres momentos:
-1. **Un solo mensaje con lo general de la API:** prefijo de la API, prefijo de errores, base de datos (mssql, postgres, mysql o ninguna), autorización, Postman y `ARCHITECTURE.md`.
+1. **Cinco preguntas generales, de una en una:** prefijo de la API, prefijo de errores, base de datos (mssql, postgres, mysql o none), autorización y Postman. Cada una va en su propio mensaje (`🧱 Middleware Generator pregunta (1 de 5)`), el agente espera la respuesta y la guarda antes de pasar a la siguiente (autorización y Postman en `AGENTS.md`); salta las que ya estén respondidas. Las preguntas del agente llevan emojis para distinguirlo del agente por defecto.
+   Tras generar la base **no se detiene**: pide el primer caso de uso.
 2. **Por caso de uso:** "qué hace, qué recibe y qué devuelve". De ahí el agente deduce si los datos salen de la base de datos, de una API externa o de un stored procedure, y solo pregunta el dato que falta de ese caso (nombre, verbo y ruta de la API; nombre del SP). Con "ninguna" base de datos, todos los casos son de API externa.
 3. **Los valores reales del entorno** (host, usuario, URLs), al preparar el servicio.
 
@@ -277,12 +278,23 @@ No hace falta pedir `install_agentic_kit`. La primera herramienta que trabaja so
 
 | Situación del repo | Qué hace el MCP |
 |---|---|
-| No tiene el kit | Lo instala: `.kiro/agents/middleware-generator.md`, `middleware-gen-worker.md`, `middleware-auditor.md`, `agentic/templates/` y la sección del MCP en `AGENTS.md`. Avisa qué agente seleccionar. |
+| No tiene el kit | Lo instala: `.kiro/agents/middleware-generator.md`, `middleware-gen-worker.md`, `middleware-auditor.md`, `agentic/templates/`, la sección del MCP en `AGENTS.md` y el bloque de decisiones (ver abajo). Avisa qué agente seleccionar. **Si la herramienta que lo disparó genera algo** (`scaffold_service`, `add_use_case`, `add_authorization`, `generate_from_spec`), en esa primera llamada **no genera nada**: instala, avisa y espera a que el usuario elija el agente y repita su pedido. |
 | Tiene el kit de una versión anterior | Lo actualiza y conserva los modelos que el equipo haya puesto en los agentes. |
-| Ya está al día | No escribe nada. `scaffold_service` e `inspect_project` solo recuerdan qué agente usar. |
+| Ya está al día (o es un `generate_from_spec` con `dryRun=true`, que solo planifica) | No escribe nada. `scaffold_service` e `inspect_project` solo recuerdan qué agente usar. |
 | Hay un agente con esos nombres que no instaló este MCP | No toca nada y lo dice (los tres agentes van como conjunto). Para reemplazarlos: `install_agentic_kit` con `overwrite=true`. |
 
 **El agente del chat no lo puede fijar un MCP.** Kiro lo elige en el selector de agentes de la barra del chat (junto al selector de modelo); el agente aparece ahí al guardarse el archivo, y si no se ve hay que recargar la ventana. Según el changelog de Kiro IDE 1.0, ese mismo selector permite dejar un agente preferido que persiste entre reinicios. Un chat que ya empezó con el agente por defecto sigue con él hasta que se cambie.
+
+### Decisiones a la vista en `AGENTS.md`
+
+El agente pregunta **una vez por repo** la autorización y Postman, y guarda la respuesta en un bloque de `AGENTS.md` que el kit deja desde el principio:
+
+```
+AUTHORIZATION: undefined   # required = autorizacion activa | none = endpoints publicos
+POSTMAN: undefined   # yes | no
+```
+
+`undefined` es que todavía no se preguntó. El agente solo pregunta lo que dice `undefined`; el siguiente módulo del repo no vuelve a preguntar. Para cambiar una decisión se edita el valor. Solo se leen valores cerrados (cualquier otra cosa cuenta como no decidida), el bloque tiene sus propios marcadores y actualizar el kit nunca toca lo que contiene. Lo que dice `AGENTS.md` manda sobre lo guardado en `docs/mcp-learnings.json`.
 
 Para desactivar la instalación automática, en la configuración del servidor MCP:
 
@@ -302,7 +314,7 @@ Para desactivar la instalación automática, en la configuración del servidor M
 
 ### Del servicio que el MCP genera
 
-Derivadas del `joiSchema` (fuente de verdad, que alimenta el `.env.example`). Todo lo que tiene valor por defecto lo aplica Joi si la variable no está configurada.
+Derivadas de `joi-schema.ts` (fuente de verdad, que alimenta el `.env.example`). Todo lo que tiene valor por defecto lo aplica Joi si la variable no está configurada.
 
 | Variable | Tipo | Requerida | Descripción |
 |----------|------|-----------|-------------|
@@ -361,7 +373,7 @@ Devuelve `rules.yaml`: el **cerebro de calidad agnóstico** (arquitectura hexago
 
 ### `scaffold_service`
 Genera la base de un servicio NestJS hexagonal nuevo.
-- **Input:** `projectRoot`, `conexion?` (opcional: por defecto el nombre del motor), `motor` (`mssql`\|`postgres`\|`mysql`\|`none`, obligatorio: el agente lo pregunta; `none` = sin base de datos, no se genera ninguna conexión), `prefijoApi` (kebab-case), `prefijoError` (MAYÚSCULAS), `overwrite?`
+- **Input:** `projectRoot`, `conexion?` (opcional: por defecto el nombre del motor), `motor` (`mssql`\|`postgres`\|`mysql`\|`none`, obligatorio: el agente lo pregunta; `none` = sin base de datos, no se genera ninguna conexión), `prefijoApi` (kebab-case), `prefijoError` (MAYÚSCULAS), `overwrite?`. Los tres obligatorios (`prefijoApi`, `prefijoError`, `motor`) los valida la herramienta, no el esquema: si falta alguno **no genera nada** y responde con la lista de lo que hay que preguntarle al usuario.
 - **Escribe:** `src/shared/**`, config/enforcement, `main.ts`, `app.module.ts`, `.env.example`.
 
 ### `add_use_case`
@@ -380,10 +392,10 @@ Registra el módulo en el inventario y escribe su auditoría.
 
 ### `generate_api_docs`
 Genera la documentación de la API **leyendo el código real** (controllers, DTOs y catálogos de error). Determinista: el mismo código da los mismos archivos.
-- **Input:** `projectRoot`, `modules?` (por defecto todos), `postman?` (default `false`), `architecture?` (default `false`)
+- **Input:** `projectRoot`, `modules?` (por defecto todos), `postman?` (default `false`), `architecture?` (default `true`: `docs/ARCHITECTURE.md` se genera siempre)
 - **Siempre escribe:** `src/<modulo>/contracts/<modulo>.api.md` (contrato: endpoints, campos, errores, curl), `src/<modulo>/diagrams/<modulo>.flow.mmd` (Mermaid `sequenceDiagram` por módulo) y `docs/api/README.md` (índice).
 - **Opt-in (el agente pregunta):** `postman=true` crea `docs/api/middleware.postman_collection.json` (una colección v2.1, una carpeta por módulo; al fusionar solo se reemplaza la carpeta del módulo). `architecture=true` crea `docs/ARCHITECTURE.md` con un diagrama Mermaid `architecture-beta` (11.1+; las líneas `align` requieren 11.16+).
-- **Se mantiene al día:** `add_use_case`, `generate_from_spec` y `record_architecture` regeneran el contrato y el diagrama del módulo, y refrescan Postman y `ARCHITECTURE.md` si ya existen. `verify_standards` avisa (WARN, no bloquea) con `API_DOCS_MISSING` / `API_DOCS_STALE`.
+- **Se mantiene al día:** `add_use_case`, `generate_from_spec` y `record_architecture` regeneran el contrato y el diagrama del módulo, y refrescan `ARCHITECTURE.md` siempre y Postman si ya existe. `verify_standards` avisa (WARN, no bloquea) con `API_DOCS_MISSING` / `API_DOCS_STALE`.
 
 ### `add_authorization`, `record_decision`, `get_learnings`, `install_agentic_kit`, `get_flow`
 Ver `docs/DESIGN.md`: autorización opt-in del borde HTTP, memoria por repo (consultiva), kit de agentes y procedimiento de cada flujo.
@@ -424,7 +436,13 @@ Agnóstico de dominio: `module`, `entity` y `use_cases` los define el usuario. U
 - **`businessRules.ts`** — materializa reglas como guardas con `GenericException`; infiere la condición por patrón (obligatorio, enum, unicidad, 404, branching) y estampa una **NOTA** de que es una aproximación a revisar.
 
 ### Convención de nombres
-Carpeta de dominio en lowercase, clases en PascalCase, puertos `I<Caso>Service` (inbound) / `I<Caso>Repository` (outbound), entidades `*.entity.ts`, tokens de inyección en MAYÚSCULAS. Sustitución de placeholders **case-sensitive**.
+**Nombres en inglés.** Carpetas y archivos en **kebab-case con sufijo de tipo** (`store-configuration/`, `retrieve-product.controller.ts`, `retrieve-product.inbound.port.ts`, `store-configuration.infrastructure.module.ts`); clases e interfaces en PascalCase (`IRetrieveProductService`, `HttpClientService`), variables y propiedades en camelCase, constantes y tokens en MAYÚSCULAS.
+
+**Mapeo desde la base de datos (como el canon).** La entidad de dominio de respuesta es una clase con `@Expose` en cada campo y el adapter la construye con `Mapper`/`MapperList` (`plainToInstance` + `excludeExtraneousValues`: un campo sin `@Expose` se pierde). Nunca se castea una fila con `as` (`BLIND_CAST`). Las propiedades van en **camelCase** con las palabras tal como vienen de la fuente (`tipo_bloqueo` → `tipoBloqueo`, `PFM_Id` → `pfmId`):
+- Stored procedure o API externa: `@Expose({ name: 'tipo_bloqueo' }) tipoBloqueo?: number`.
+- TypeORM: la entidad TypeORM tiene `@Column({ name: 'tipo_bloqueo' }) tipoBloqueo: number` y la de dominio `@Expose() tipoBloqueo?: number`; el adapter devuelve `Mapper(Entidad, row)`.
+
+Con `generate_from_spec`, los campos de `dtos.output` se escriben así solos. `verify_standards` avisa `NAMING_FILE_CASE` (WARN) ante un archivo o carpeta que no sea kebab-case. Sustitución de placeholders **case-sensitive**.
 
 ---
 
@@ -450,12 +468,15 @@ npm run test:e2e # genera, instala, compila y arranca un servicio real (necesita
 | `test/httpAdapter.test.mjs` | Adapter de API externa: cableado sin base de datos, verbos GET/POST/PUT, config/Joi/.env, mezcla con TypeORM, spec, refactor, documentación. |
 | `test/errorCodes.test.mjs` | Códigos `PREFIJO-SLUG-NNN`: secuencia por prefijo, 001-999, agotamiento, capa compartida de 3 dígitos y reglas del verificador. |
 | `test/envFile.test.mjs`, `test/environment.test.mjs` | `.env.example` por secciones y defaults de Joi; pasos dirigidos al agente, `.gitignore` y `ENV_NOT_IGNORED`. |
+| `test/naming.test.mjs` | Convención de nombres: helpers, módulo de varias palabras (identificadores válidos, archivos kebab-case, verificador limpio), merge de un segundo caso, `resource_type`, rechazo de un dominio con la estructura anterior y aviso `NAMING_FILE_CASE`. |
+| `test/mapping.test.mjs` | Mapeo como el canon: propiedades camelCase, `@Expose` con el nombre de la columna (SP) o simple (TypeORM), `@Column` en la entidad TypeORM, `Mapper` en el adapter y aviso `BLIND_CAST` ante `as unknown as`. |
 | `test/apiDocs.test.mjs` | Documentación generada desde el código: contrato, diagrama, fusión de Postman, `architecture-beta`, refresco automático y avisos del verificador. |
-| `test/agentic.test.mjs`, `test/autoKit.test.mjs` | Kit de agentes: instalación idempotente, `AGENTS.md` ajeno/roto, modelos; instalación automática por el protocolo MCP (instala, actualiza conservando modelos, respeta agentes ajenos, opt-out). |
+| `test/preferences.test.mjs` | Bloque de decisiones en `AGENTS.md`: se crea sin valores, escribir una respuesta cambia solo su valor, se respeta lo que el usuario edita, actualizar el kit no lo toca, CRLF, bloque roto, y `get_learnings` informa lo que dice `AGENTS.md`. |
+| `test/agentic.test.mjs`, `test/autoKit.test.mjs` | Kit de agentes: instalación idempotente, `AGENTS.md` ajeno/roto, modelos; instalación automática por el protocolo MCP (compuerta del primer contacto, actualiza conservando modelos, respeta agentes ajenos, opt-out). |
 | `test/learnings.test.mjs` | Aprendizaje por repo: captura, saneamiento de texto hostil, y que el verificador no lo lee. |
 | `test/e2e/compile.e2e.mjs` | **End-to-end real** (`npm run test:e2e`): genera módulos (SP y TypeORM) + autorización, `npm install`, `npm run build`, tests y lint del servicio generado, `verify-standards`, y lo arranca para probarlo por HTTP (health, cabeceras, 401/403/200, 413, 400, 429, defaults de Joi sin variables). Además un servicio **sin base de datos** que consume una API externa falsa (200, 404, 502, API caída, propagación del correlation ID). |
 
-**Estado actual:** 219 tests rápidos y 25 comprobaciones end-to-end, todos en verde. Lo que **no** está probado: postgres y mysql contra motores vivos (solo con un DataSource falso), y la conversación del agente con modelos reales dentro de Kiro.
+**Estado actual:** 233 tests rápidos y 25 comprobaciones end-to-end, todos en verde. Lo que **no** está probado: postgres y mysql contra motores vivos (solo con un DataSource falso), y la conversación del agente con modelos reales dentro de Kiro.
 
 ---
 

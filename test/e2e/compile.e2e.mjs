@@ -153,7 +153,7 @@ complexity: { level: 0, signals: [] }
 `
 
 const EDGE_MODULE = `import { Controller, HttpCode, Module, Post } from '@nestjs/common'
-import { GlobalSettingModule } from './shared/infrastructure/globalsetting.module'
+import { GlobalSettingModule } from './shared/infrastructure/global-setting.module'
 import { SecurityModule } from './shared/infrastructure/security/security.module'
 import { HealthModule } from './shared/infrastructure/http-server/health.module'
 import { AuthorizationModule } from './shared/authorization/authorization.module'
@@ -463,12 +463,12 @@ test('a generated NestJS service compiles, passes its own checks and serves its 
       const made = await scaffoldService({ projectRoot: root, motor: 'none', prefijoApi: 'midd-rates', prefijoError: 'RATES', overwrite: true })
       assert.notEqual(made.isError, true, made.content[0].text)
       assert.equal(existsSync(join(root, 'src/shared/infrastructure/database-context')) && readdirSync(join(root, 'src/shared/infrastructure/database-context')).some((f) => f.endsWith('.module.ts')), false)
-      const specPath = join(root, 'agentic/specs/rates/input/specs/middleware.spec.yaml')
+      const specPath = join(root, 'agentic/specs/exchange-rates/input/specs/middleware.spec.yaml')
       mkdirSync(join(specPath, '..'), { recursive: true })
       writeFileSync(
         specPath,
         [
-          'module: rates',
+          'module: exchange-rates',
           'entity: Rate',
           'description: Tipo de cambio',
           'stack: nestjs',
@@ -542,7 +542,7 @@ test('a generated NestJS service compiles, passes its own checks and serves its 
           assert.ok(up, 'the service without database did not boot. Output:\n' + tail(log.join('')))
           assert.equal(up.status, 200)
           const ask = (currency, extra = {}) =>
-            request(bare, '/midd-rates/api/v1/rates/retrieveRate', {
+            request(bare, '/midd-rates/api/v1/exchange-rates/retrieveRate', {
               headers: jsonApi(extra),
               body: JSON.stringify({ data: { type: 'rate', attributes: { currency } } })
             })
@@ -553,7 +553,7 @@ test('a generated NestJS service compiles, passes its own checks and serves its 
           assert.equal(ok.json.data.type, 'rate')
           assert.deepEqual(upstream[0], { method: 'GET', url: '/rates?currency=USD', correlation: 'trace-e2e-1' }, 'GET with the request as query string, the correlation id travels on')
 
-          const list = await request(bare, '/midd-rates/api/v1/rates/listRates', {
+          const list = await request(bare, '/midd-rates/api/v1/exchange-rates/listRates', {
             headers: jsonApi(),
             body: JSON.stringify({ data: { type: 'rate-list', attributes: { currency: 'USD' } } })
           })
@@ -584,7 +584,7 @@ test('a generated NestJS service compiles, passes its own checks and serves its 
           let res
           for (let i = 0; i < 120 && !res; i++) {
             try {
-              res = await request(unreachable, '/midd-rates/api/v1/rates/retrieveRate', {
+              res = await request(unreachable, '/midd-rates/api/v1/exchange-rates/retrieveRate', {
                 headers: jsonApi(),
                 body: JSON.stringify({ data: { type: 'rate', attributes: { currency: 'USD' } } })
               })

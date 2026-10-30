@@ -1,6 +1,6 @@
 import { Transform } from 'class-transformer'
 import { SourceError } from './error.response.source.dto'
-import { HttpStatusType } from '../../../core/types/genericTypes.type'
+import { HttpStatusType } from '../../../core/types/generic-types.type'
 
 export class TError {
   code: string

@@ -14,6 +14,8 @@ import { envVarApiBaseUrl } from './adapters.js'
 import { formatErrorNumber, nextErrorNumbers } from './errorCodes.js'
 import { ENV_SECTIONS, addEnvEntries } from './envFile.js'
 import { patchDomainModules, patchJoiSchema } from './spWiring.js'
+import { domainFolder } from './names.js'
+import { configFile, configFileRel } from './projectFiles.js'
 
 const read = (p: string): string => (existsSync(p) ? readFileSync(p, 'utf8') : '')
 
@@ -21,7 +23,7 @@ export type HttpWiringResult = { patched: string[]; warnings: string[] }
 
 /** Declares `<Api>: { baseUrl: process.env.<NAME>_BASE_URL }` in the externalApis group of ConfigurationVariables. */
 function patchConfigurationVariables(projectRoot: string, api: string, envVar: string): 'patched' | 'unchanged' | 'no-file' | 'no-anchor' {
-  const file = join(projectRoot, 'src/shared/infrastructure/config/ConfigurationVariables.ts')
+  const file = configFile(projectRoot, 'variables')
   let content = read(file)
   if (!content) return 'no-file'
   // Code only: the example in a comment must not count as a declaration (it did, once).
@@ -39,7 +41,7 @@ function patchConfigurationVariables(projectRoot: string, api: string, envVar: s
 
 /** The entry the adapter throws when the external API cannot be reached or answers an error. */
 function ensureExternalApiError(projectRoot: string, dominio: string, errorPrefix: string): 'patched' | 'unchanged' | 'no-file' {
-  const domLower = dominio.toLowerCase()
+  const domLower = domainFolder(dominio)
   const file = join(projectRoot, 'src', domLower, 'core', 'domain', 'errors', `${domLower}.domain.error.ts`)
   const content = read(file)
   if (!content) return 'no-file'
@@ -67,25 +69,25 @@ function ensureExternalApiError(projectRoot: string, dominio: string, errorPrefi
 export function wireExternalApi(opts: {
   projectRoot: string
   dominio: string
-  casoCamel: string
+  casoKebab: string
   api: string
   errorPrefix: string
   entidad?: string
   /** Rewrite the domain modules to the http adapter. Only for the first case of a domain: a later one is merged. */
   patchModules: boolean
 }): HttpWiringResult {
-  const { projectRoot, dominio, casoCamel, api, errorPrefix, entidad } = opts
+  const { projectRoot, dominio, casoKebab, api, errorPrefix, entidad } = opts
   const patched: string[] = []
   const warnings: string[] = []
   const envVar = envVarApiBaseUrl(api)
 
-  if (opts.patchModules) patched.push(...patchDomainModules({ projectRoot, dominio, caso: casoCamel, entidad, adapter: 'http' }))
+  if (opts.patchModules) patched.push(...patchDomainModules({ projectRoot, dominio, caso: casoKebab, entidad, adapter: 'http' }))
 
   const config = patchConfigurationVariables(projectRoot, api, envVar)
-  if (config === 'patched') patched.push('src/shared/infrastructure/config/ConfigurationVariables.ts')
+  if (config === 'patched') patched.push(configFileRel(projectRoot, 'variables'))
   else if (config !== 'unchanged') warnings.push(`No se pudo declarar ${envVar} en ConfigurationVariables.externalApis (${config}): declarala a mano (config + joiSchema + .env.example).`)
 
-  if (patchJoiSchema({ projectRoot, envVarSp: envVar, rule: 'Joi.string().uri().required()' })) patched.push('src/shared/infrastructure/config/joiSchema.ts')
+  if (patchJoiSchema({ projectRoot, envVarSp: envVar, rule: 'Joi.string().uri().required()' })) patched.push(configFileRel(projectRoot, 'joi'))
 
   const envFile = join(projectRoot, '.env.example')
   const envContent = read(envFile)
@@ -98,7 +100,7 @@ export function wireExternalApi(opts: {
   }
 
   const catalog = ensureExternalApiError(projectRoot, dominio, errorPrefix)
-  if (catalog === 'patched') patched.push(`src/${dominio.toLowerCase()}/core/domain/errors/${dominio.toLowerCase()}.domain.error.ts`)
+  if (catalog === 'patched') patched.push(`src/${domainFolder(dominio)}/core/domain/errors/${domainFolder(dominio)}.domain.error.ts`)
   else if (catalog === 'no-file') warnings.push(`No encontre el catalogo de errores del dominio ${dominio}: agrega la entrada EXTERNAL_API_ERROR a mano.`)
   return { patched, warnings }
 }

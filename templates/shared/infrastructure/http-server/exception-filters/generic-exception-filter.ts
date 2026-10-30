@@ -8,7 +8,7 @@ import {
 } from '@nestjs/common'
 import { HttpArgumentsHost } from '@nestjs/common/interfaces'
 import { ErrorResponse } from '../dto/error.response.dto'
-import { getCorrelationId } from '../../observability/correlationContext'
+import { getCorrelationId } from '../../observability/correlation-context'
 
 // Errors raised by the body parser. It runs BEFORE Nest, so they are not HttpExceptions: the status they
 // carry is already right (413 / 400), but without this table the client would read "Internal Server Error"
@@ -51,7 +51,7 @@ export class AllExceptionsFilter implements ExceptionFilter {
     let title = 'Internal Server Error'
     let details = 'Please check the server logs for more information.'
     let suggestedAction = 'Please try again later.'
-    let code = 'PF-ERROR-GENERIC'
+    let code = 'SERVICE-GENERICERROR-000'
 
     if (exception instanceof NotFoundException) {
       status = exception.getStatus()

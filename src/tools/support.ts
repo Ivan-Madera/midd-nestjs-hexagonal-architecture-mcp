@@ -141,7 +141,7 @@ export async function listTemplates(a: { subdir: 'shared' | 'config' | '_domain-
 export const getTemplateSchema = {
   relativePath: z
     .string()
-    .describe('Ruta relativa de la plantilla dentro del dataset, p.ej. "shared/utils/services/consumoHttp.ts".')
+    .describe('Ruta relativa de la plantilla dentro del dataset, p.ej. "shared/utils/services/http-client.service.ts".')
 }
 
 export async function getTemplate(a: { relativePath: string }) {

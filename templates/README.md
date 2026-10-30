@@ -36,7 +36,7 @@ actualiza aquí (fuente única) y todos los servicios nuevos heredan el cambio.
 
 **Dos formas del mismo marcador según dónde aparezca:**
 - **En nombres de archivo/carpeta:** `__X__` (doble guion bajo), porque `<>` son inválidos en Windows.
-  Ej.: `__caso__.application.ts`, `I__Caso__Service.ts`, `__dominio__.core.module.ts`.
+  Ej.: `__casoKebab__.application.ts`, `__casoKebab__.inbound.port.ts`, `__dominioKebab__.core.module.ts`. Los archivos y carpetas van en **kebab-case**: usa los marcadores `...Kebab__`.
 - **Dentro del contenido:** `__X__` para identificadores de código (clases, variables, imports) y
   `<X>` para texto/valores no-identificador (rutas, nombres de tabla, SP, prefijos). Ej.: la clase
   `__Caso__ApplicationService` pero `@Controller('/<ruta-dominio>')` y `'<PREFIJO>-<SLUG>-<NNN>'`.
@@ -46,16 +46,16 @@ formas. Después aplica Prettier y corre el build.
 
 | Placeholder | Significado | Ejemplo |
 |---|---|---|
-| `__Dominio__` / `__dominio__` | bounded context en Pascal / camel | `Enrollment` / `enrollment` |
-| `__Caso__` / `__caso__` | caso de uso en Pascal / camel | `ImeiValidation` / `imeiValidation` |
+| `__Dominio__` / `__dominio__` / `__dominioKebab__` | bounded context en Pascal / camel / kebab (archivos y carpetas) | `StoreConfiguration` / `storeConfiguration` / `store-configuration` |
+| `__Caso__` / `__caso__` / `__casoKebab__` | caso de uso en Pascal / camel / kebab (archivos) | `ImeiValidation` / `imeiValidation` / `imei-validation` |
 | `__CASO__` | caso de uso en MAYÚSCULAS (tokens DI) | `IMEI_VALIDATION` |
-| `__Entidad__` | entidad de dominio | `LockType` |
+| `__Entidad__` / `__entidadKebab__` | entidad de dominio / su nombre de archivo | `LockType` / `lock-type` |
 | `__Attributes__` | clase de attributes del DTO | `ImeiDataToValidate` |
 | `__Respuesta__` | tipo de retorno del caso de uso | `LockTypeResponse` |
 | `__metodo__` / `__param__` | método del puerto / su parámetro | `retrieveLockType` / `imei` |
 | `__casoDeUso__` / `__accion__` | método del application / ruta POST | `imeiValidation` / `checkLockType` |
 | `__ERROR_KEY__` / `__NombreSp__` | llave del catálogo / nombre SP en config | `NOT_FOUND_0048` / `GetLockTypePhone` |
-| `<Conexion>` | nombre de conexión TypeORM | `SoftCredito` |
+| `<Conexion>` / `__conexionKebab__` | nombre de conexión TypeORM / su nombre de archivo | `SoftCredito` / `soft-credito` |
 | `<PREFIJO>` / `<SLUG>` | prefijo y slug de códigos de error | `ENROLLMENT` / `NOTFOUND` |
 | `<ERR_NUM_APP>` / `<ERR_NUM_DOM>` | número (001-999) del error de aplicación / de dominio; lo asigna la secuencia del prefijo | `001` / `002` |
 | `__ApiExterna__` / `__ENV_VAR_API__` | adapter `http`: nombre de la API externa / variable de su URL base | `ExchangeRates` / `EXCHANGE_RATES_BASE_URL` |
@@ -67,18 +67,18 @@ formas. Después aplica Prettier y corre el build.
 
 El acceso a datos por defecto es **TypeORM**. El stored procedure NO se asume: el desarrollador debe
 **pedirlo explícitamente e indicar el nombre del SP**. Vienen tres adapters; usa UNO y borra los otros:
-- `__caso__.typeorm.adapter.ts` — repositorio TypeORM de entidad (**por defecto**, probado end-to-end).
-- `__caso__.sp.adapter.ts` — stored procedure vía `DatabaseCommonService` (**solo si el dev lo pide**).
-- `__caso__.http.adapter.ts` — API externa con el `fetch` nativo (`consumoHttp`); **no usa base de datos** (solo si el caso consume una API).
+- `__casoKebab__.typeorm.adapter.ts` — repositorio TypeORM de entidad (**por defecto**, probado end-to-end).
+- `__casoKebab__.sp.adapter.ts` — stored procedure vía `DatabaseCommonService` (**solo si el dev lo pide**).
+- `__casoKebab__.http.adapter.ts` — API externa con el `fetch` nativo (`HttpClientService`); **no usa base de datos** (solo si el caso consume una API).
 
-Por defecto, `infrastructure.__dominio__.module.ts` y `__dominio__.module.ts` importan el `.typeorm`;
+Por defecto, `__dominioKebab__.infrastructure.module.ts` y `__dominioKebab__.module.ts` importan el `.typeorm`;
 borra el `.sp`.
 
 **Si el dev pide stored procedure** (debe dar el nombre del SP):
-1. Cambia el import al `.sp.adapter` en **ambos** módulos (`infrastructure.__dominio__.module.ts` y
-   `__dominio__.module.ts`) y borra el `.typeorm`.
-2. Registra el nombre del SP en `shared/infrastructure/config/ConfigurationVariables.ts`
-   (`storedProcedures`), en `joiSchema.ts` (como `required()`) y en `.env.example`.
+1. Cambia el import al `.sp.adapter` en **ambos** módulos (`__dominioKebab__.infrastructure.module.ts` y
+   `__dominioKebab__.module.ts`) y borra el `.typeorm`.
+2. Registra el nombre del SP en `shared/infrastructure/config/configuration-variables.ts`
+   (`storedProcedures`), en `joi-schema.ts` (como `required()`) y en `.env.example`.
 3. Nunca hardcodees el nombre del SP ni leas `process.env` fuera de `ConfigurationVariables`.
 
 ## Estado del dataset

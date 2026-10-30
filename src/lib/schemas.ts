@@ -3,49 +3,54 @@ import { MOTORES, SIN_BASE_DE_DATOS } from './engines.js'
 import { ADAPTERS, HTTP_VERBS } from './adapters.js'
 
 /**
- * Inputs comunes a las herramientas. `projectRoot` es la raíz del servicio
- * destino donde el MCP escribirá (modo A: escribe disco).
+ * Inputs comunes a las herramientas. `projectRoot` es la raÃ­z del servicio
+ * destino donde el MCP escribirÃ¡ (modo A: escribe disco).
  */
 
 export const projectRoot = z
   .string()
-  .describe('Ruta absoluta de la raíz del servicio NestJS destino donde se escriben los archivos.')
+  .describe('Ruta absoluta de la raÃ­z del servicio NestJS destino donde se escriben los archivos.')
 
 export const dominio = z
   .string()
-  .describe('Nombre del bounded context en PascalCase, p.ej. "Catalog".')
+  .describe('Nombre del bounded context en INGLES y PascalCase, p.ej. "Catalog" o "StoreConfiguration" (varias palabras = PascalCase; la carpeta resulta kebab-case: store-configuration). Si el usuario lo dio en espanol, traducelo y confirmalo en el plan.')
 
 export const caso = z
   .string()
-  .describe('Nombre del caso de uso en PascalCase, p.ej. "RetrieveProduct".')
+  .describe('Nombre del caso de uso en INGLES y PascalCase, p.ej. "RetrieveProduct" (los archivos resultan kebab-case: retrieve-product.*).')
 
 export const entidad = z
   .string()
-  .describe('Nombre de la entidad de dominio en PascalCase, p.ej. "Product".')
+  .describe('Nombre de la entidad de dominio en INGLES y PascalCase, p.ej. "Product".')
 
 export const metodo = z
   .string()
-  .describe('Método del puerto en camelCase, p.ej. "retrieveBySku".')
+  .describe('MÃ©todo del puerto en camelCase, p.ej. "retrieveBySku".')
 
 export const param = z
   .string()
-  .describe('Parámetro principal del método en camelCase, p.ej. "sku". (Legado: usado solo para el fixture del test generado.)')
+  .describe('ParÃ¡metro principal del mÃ©todo en camelCase, p.ej. "sku". (Legado: usado solo para el fixture del test generado.)')
 
 export const request = z
   .string()
   .optional()
   .describe(
-    'Entidad de dominio request del método principal en PascalCase, p.ej. "RetrieveProductRequest". Canon: los métodos del puerto reciben una entidad tipada, no un string. Por defecto <Caso>Request.'
+    'Entidad de dominio request del mÃ©todo principal en PascalCase, p.ej. "RetrieveProductRequest". Canon: los mÃ©todos del puerto reciben una entidad tipada, no un string. Por defecto <Caso>Request.'
   )
 
 export const accion = z
   .string()
   .describe('Ruta del endpoint POST (camel o kebab), p.ej. "retrieveProduct".')
 
+export const tipoRecurso = z
+  .string()
+  .optional()
+  .describe('Type JSON:API del recurso en kebab-case, en ingles (p.ej. "exchange-rate"). Si se omite: la entidad en kebab-case. Con generate_from_spec sale del resource_type del spec.')
+
 export const prefijoError = z
   .string()
   .describe(
-    'Prefijo de errores de la API en mayúsculas. Por ejemplo, CATALOG. Los errores quedarán como CATALOG-PRODUCTNOTFOUND-001; el número va de 001 a 999 y lo asigna el MCP en secuencia por prefijo.'
+    'Prefijo de errores de la API en mayÃºsculas. Por ejemplo, CATALOG. Los errores quedarÃ¡n como CATALOG-PRODUCTNOTFOUND-001; el nÃºmero va de 001 a 999 y lo asigna el MCP en secuencia por prefijo.'
   )
 
 export const conexion = z
@@ -53,13 +58,13 @@ export const conexion = z
   .regex(/^[A-Z][A-Za-z0-9]{0,47}$/, 'PascalCase, solo letras y numeros, p.ej. "Mssql2".')
   .optional()
   .describe(
-    'OPCIONAL: no se le pregunta al usuario. Sin valor, la conexión se llama como su motor (Mssql, Postgres, Mysql): se reutiliza la única conexión de ese motor o se crea una nueva. Pásalo solo para una conexión ADICIONAL de un motor que ya tiene una (Mssql2, Mssql3; inspect_project dice cuál toca) y solo si el usuario la pide. En refactor NO lo pases: la conexión del proyecto se detecta y se reutiliza (solo si el proyecto tiene varias, indica cuál). PascalCase, sin el sufijo Connection.'
+    'OPCIONAL: no se le pregunta al usuario. Sin valor, la conexiÃ³n se llama como su motor (Mssql, Postgres, Mysql): se reutiliza la Ãºnica conexiÃ³n de ese motor o se crea una nueva. PÃ¡salo solo para una conexiÃ³n ADICIONAL de un motor que ya tiene una (Mssql2, Mssql3; inspect_project dice cuÃ¡l toca) y solo si el usuario la pide. En refactor NO lo pases: la conexiÃ³n del proyecto se detecta y se reutiliza (solo si el proyecto tiene varias, indica cuÃ¡l). PascalCase, sin el sufijo Connection.'
   )
 
 export const prefijoApi = z
   .string()
   .describe(
-    'Prefijo de la API en kebab-case. Por ejemplo, midd-catalog. Los endpoints quedarán como /<prefijo>/api/v1/{recurso}. Se guarda como API_CONTEXT (prefijo global). Pregúntalo como "prefijo de la API", no como prefijo del servicio.'
+    'Prefijo de la API en kebab-case. Por ejemplo, midd-catalog. Los endpoints quedarÃ¡n como /<prefijo>/api/v1/{recurso}. Se guarda como API_CONTEXT (prefijo global). PregÃºntalo como "prefijo de la API", no como prefijo del servicio.'
   )
 
 export const adapterType = z
@@ -95,7 +100,7 @@ export const envVarSp = z
   .string()
   .optional()
   .describe(
-    'Nombre de la variable de entorno que porta el SP (MAYÚSCULAS, solo si adapterType="sp"). Por defecto se deriva de nombreSp como <NOMBRE_SP>_SP.'
+    'Nombre de la variable de entorno que porta el SP (MAYÃšSCULAS, solo si adapterType="sp"). Por defecto se deriva de nombreSp como <NOMBRE_SP>_SP.'
   )
 
 export const overwrite = z
@@ -107,21 +112,21 @@ export const mode = z
   .enum(['greenfield', 'refactor'])
   .default('greenfield')
   .describe(
-    'Modo de generación. "greenfield" (default): servicio nuevo, cablea app.module y mergea módulos del dataset. "refactor": proyecto existente — NO toca app.module ni módulos ajenos; genera el slice hexagonal para que el agente lo adapte a la infra del proyecto.'
+    'Modo de generaciÃ³n. "greenfield" (default): servicio nuevo, cablea app.module y mergea mÃ³dulos del dataset. "refactor": proyecto existente â€” NO toca app.module ni mÃ³dulos ajenos; genera el slice hexagonal para que el agente lo adapte a la infra del proyecto.'
   )
 
 export const connectionStyle = z
   .enum(['named', 'default'])
   .default('named')
   .describe(
-    'Forma de la conexión TypeORM del proyecto. "named" (default): conexión nombrada (<Conexion>Connection). "default": conexión por defecto de forRoot (los adapters no inyectan nombre de conexión). Úsalo según lo que reporte inspect_project.'
+    'Forma de la conexiÃ³n TypeORM del proyecto. "named" (default): conexiÃ³n nombrada (<Conexion>Connection). "default": conexiÃ³n por defecto de forRoot (los adapters no inyectan nombre de conexiÃ³n). Ãšsalo segÃºn lo que reporte inspect_project.'
   )
 
 export const infraStyle = z
   .enum(['dataset', 'project'])
   .default('dataset')
   .describe(
-    'Capa de infraestructura transversal (logger, excepciones, respuesta JSON:API base, config) que importan los archivos generados. "dataset" (default, greenfield): usa la capa shared del dataset (src/shared/*). "project" (refactor): los imports apuntan a la carpeta de infra propia del proyecto (ver infraRoot); el agente aún debe conciliar los NOMBRES de símbolo (p.ej. ResponseJsonApiBase vs ResponseJsonApi del proyecto).'
+    'Capa de infraestructura transversal (logger, excepciones, respuesta JSON:API base, config) que importan los archivos generados. "dataset" (default, greenfield): usa la capa shared del dataset (src/shared/*). "project" (refactor): los imports apuntan a la carpeta de infra propia del proyecto (ver infraRoot); el agente aÃºn debe conciliar los NOMBRES de sÃ­mbolo (p.ej. ResponseJsonApiBase vs ResponseJsonApi del proyecto).'
   )
 
 export const infraRoot = z
@@ -134,7 +139,7 @@ export const infraRoot = z
 export const motor = z
   .enum([...MOTORES, SIN_BASE_DE_DATOS])
   .describe(
-    'Motor de base de datos: mssql (SQL Server), postgres (PostgreSQL) o mysql (MySQL), o "none" si el servicio NO usa base de datos (no se crea ninguna conexión, ni módulo, ni variables, ni driver). SIEMPRE se le pregunta al usuario: no hay default. Define el tipo de TypeORM, el driver, el puerto y la sintaxis de los stored procedures.'
+    'Motor de base de datos: mssql (SQL Server), postgres (PostgreSQL) o mysql (MySQL), o "none" si el servicio NO usa base de datos (no se crea ninguna conexiÃ³n, ni mÃ³dulo, ni variables, ni driver). SIEMPRE se le pregunta al usuario: no hay default. Define el tipo de TypeORM, el driver, el puerto y la sintaxis de los stored procedures.'
   )
 export const crearConexion = z
   .boolean()
@@ -145,5 +150,5 @@ export const crearConexion = z
 export const motorOpcional = motor
   .optional()
   .describe(
-    'Motor de la conexión. Greenfield: obligatorio si la conexión es nueva (el MCP la crea completa); "none" = sin base de datos (rechaza adapters TypeORM/SP). Refactor: solo se pasa, junto con "conexion", cuando el usuario pidió EXPRESAMENTE crear una conexión que el proyecto no tiene; si no, se reutiliza la del proyecto y el motor se ignora. Valores: mssql | postgres | mysql | none.'
+    'Motor de la conexiÃ³n. Greenfield: obligatorio si la conexiÃ³n es nueva (el MCP la crea completa); "none" = sin base de datos (rechaza adapters TypeORM/SP). Refactor: solo se pasa, junto con "conexion", cuando el usuario pidiÃ³ EXPRESAMENTE crear una conexiÃ³n que el proyecto no tiene; si no, se reutiliza la del proyecto y el motor se ignora. Valores: mssql | postgres | mysql | none.'
   )

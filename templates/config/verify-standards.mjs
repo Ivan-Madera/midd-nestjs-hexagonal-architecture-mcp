@@ -112,6 +112,23 @@ for (const file of allFiles) {
     addWarn('NAMING_ENTITY', 'Domain entity without ".entity.ts" suffix (canon: "<Name>.entity.ts").', path)
 }
 
+// 1c. File and folder names are kebab-case with a dotted type suffix: retrieve-product.controller.ts (WARN, so a
+//     service written before the standard is not blocked). Classes stay PascalCase; that is not checked here.
+const KEBAB = /^[a-z0-9]+(-[a-z0-9]+)*$/
+const KEBAB_FILE = /^[a-z0-9]+(-[a-z0-9]+)*(\.[a-z0-9]+(-[a-z0-9]+)*)*\.[a-z0-9]+$/
+const reportedNames = new Set()
+for (const file of allFiles) {
+  const path = rel(file)
+  if (/\s/.test(basename(file))) continue // already NAMING_SPACES
+  const parts = path.replace(/^src\//, '').split('/')
+  const folders = parts.slice(0, -1)
+  const bad = folders.find((p) => !KEBAB.test(p)) ?? (KEBAB_FILE.test(parts[parts.length - 1]) ? undefined : parts[parts.length - 1])
+  if (bad && !reportedNames.has(bad)) {
+    reportedNames.add(bad)
+    addWarn('NAMING_FILE_CASE', `"${bad}" is not kebab-case. Files and folders: kebab-case with a dotted suffix (retrieve-product.controller.ts).`, path)
+  }
+}
+
 // ───────────────────────────────────────────────────────────────────────────
 // 2. MANDATORY HTTP SECURITY BASELINE (ERROR) — main.ts + shared/infrastructure/security
 // ───────────────────────────────────────────────────────────────────────────
@@ -171,8 +188,8 @@ if (!main) {
     )
 
   // Rate limiting: THREE mandatory controls. C1 + C2 live in a registered global guard.
-  const guardRegistered = anyFileMatches(/APP_GUARD/) && anyFileMatches(/maxRequestsPerWindow/, (p) => !/ConfigurationVariables/.test(p))
-  const concurrency = anyFileMatches(/maxConcurrentPerIp/, (p) => !/ConfigurationVariables/.test(p))
+  const guardRegistered = anyFileMatches(/APP_GUARD/) && anyFileMatches(/maxRequestsPerWindow/, (p) => !/configuration-?variables/i.test(p))
+  const concurrency = anyFileMatches(/maxConcurrentPerIp/, (p) => !/configuration-?variables/i.test(p))
   const payload = /maxJsonPayloadBytes|createPayloadSizeMiddleware/.test(main)
   const missingRl = []
   if (!guardRegistered) missingRl.push('C1 rate per IP (global APP_GUARD)')
@@ -216,7 +233,7 @@ if (!main) {
 }
 
 // Env validation: every mandatory variable must be in the Joi schema AND in .env.example
-const joiFile = allFiles.find((f) => /joiSchema\.ts$/i.test(f))
+const joiFile = allFiles.find((f) => /joi-?schema\.ts$/i.test(f))
 const mandatoryEnv = [
   'API_CONTEXT',
   'CORS_ALLOWED_ORIGINS',
@@ -245,12 +262,12 @@ if (joiFile) {
       )
   }
 } else if (main) {
-  addError('MISSING_ENV_VALIDATION', 'No joiSchema.ts found: environment variables are not validated.')
+  addError('MISSING_ENV_VALIDATION', 'No joi-schema.ts found: environment variables are not validated.')
 }
 
 // Every variable ConfigurationVariables reads must be validated in Joi: a variable that is read but not
 // validated lets the service boot with `undefined` and fail later, far from the cause.
-const configFile = allFiles.find((f) => /ConfigurationVariables\.ts$/.test(f))
+const configFile = allFiles.find((f) => /configuration-?variables\.ts$/i.test(f))
 if (configFile && joiFile) {
   const validated = new Set([...readCode(joiFile).matchAll(/([A-Z0-9_]+)\s*:\s*Joi\./g)].map((m) => m[1]))
   const readKeys = [...new Set([...readCode(configFile).matchAll(/process\.env\.([A-Z0-9_]+)/g)].map((m) => m[1]))]
@@ -284,12 +301,12 @@ if (joiFile) {
 
 // ───────────────────────────────────────────────────────────────────────────
 // 2b. FORBIDDEN DEPENDENCIES (ERROR): the area bans these packages outright.
-//     axios  -> use the native fetch (consumoHttp). Fewer dependencies, fewer CVEs.
+//     axios  -> use the native fetch (HttpClientService). Fewer dependencies, fewer CVEs.
 //     uuid   -> use randomUUID from 'node:crypto'. The package is ESM-only and
 //               crashes a CommonJS build at runtime even though it compiles.
 // ───────────────────────────────────────────────────────────────────────────
 const FORBIDDEN_DEPENDENCIES = {
-  axios: "Use the native fetch (see shared/utils/services/consumoHttp.ts). axios is banned.",
+  axios: "Use the native fetch (see shared/utils/services/http-client.service.ts). axios is banned.",
   uuid: "Use randomUUID from 'node:crypto'. uuid is banned (ESM-only: compiles but crashes with ERR_REQUIRE_ESM)."
 }
 const packageJson = read(join(ROOT, 'package.json'))
@@ -421,7 +438,7 @@ for (const file of tsFiles.filter((f) => /http-server\/controllers\/.*\.ts$/.tes
 // ───────────────────────────────────────────────────────────────────────────
 const MONEY_WORD =
   /(amount|monto|importe|precio|pago|payment|capital|interes|interest|enganche|downpayment|membership|membresia|tasa|rate|costo|\bcost\b|\bcat\b|total|balance|saldo)/i
-const isConfig = (p) => /shared\/infrastructure\/config\//.test(p) || /ConfigurationVariables/.test(p)
+const isConfig = (p) => /shared\/infrastructure\/config\//.test(p) || /configuration-?variables/i.test(p)
 
 const LINE_RULES = [
   {
@@ -448,7 +465,7 @@ const LINE_RULES = [
   {
     rule: 'FORBIDDEN_DEPENDENCY',
     severity: 'error',
-    message: 'Imports the banned `axios` package. Use the native fetch (see shared/utils/services/consumoHttp.ts).',
+    message: 'Imports the banned `axios` package. Use the native fetch (see shared/utils/services/http-client.service.ts).',
     applies: () => true,
     test: (l) => /\bfrom\s+['"]axios['"]/.test(l) || /\brequire\s*\(\s*['"]axios['"]\s*\)/.test(l)
   },
@@ -514,9 +531,9 @@ const LINE_RULES = [
   {
     rule: 'BLIND_CAST',
     severity: 'warn',
-    message: 'Blind "as" cast on a row/entity. Map fields explicitly.',
+    message: 'Blind "as" cast on a row/entity. Map it with Mapper (domain fields carry @Expose).',
     applies: (p) => /infrastructure\//.test(p),
-    test: (l) => /\bas\s+[A-Z]\w*(Row|Entity|Dto)\b/.test(l)
+    test: (l) => /\bas\s+[A-Z]\w*(Row|Entity|Dto)\b/.test(l) || /\bas\s+unknown\s+as\b/.test(l)
   }
 ]
 
@@ -560,7 +577,7 @@ for (const [file, text] of contents) {
 // ───────────────────────────────────────────────────────────────────────────
 const spAdapters = allFiles.filter((f) => /\.sp\.adapter\.ts$/.test(norm(f)))
 if (spAdapters.length > 0) {
-  const cfg = allFiles.find((f) => /ConfigurationVariables\.ts$/.test(f))
+  const cfg = allFiles.find((f) => /configuration-?variables\.ts$/i.test(f))
   const declaredSps = new Set([...read(cfg ?? '').matchAll(/([A-Za-z0-9_]+)\s*:\s*process\.env\./g)].map((m) => m[1]))
   for (const file of spAdapters) {
     const path = rel(file)

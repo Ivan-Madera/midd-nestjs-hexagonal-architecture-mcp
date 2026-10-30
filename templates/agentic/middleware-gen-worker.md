@@ -42,7 +42,7 @@ Si el modelo pedido no existe en este Kiro, usa el siguiente; `Auto` es la red f
 
 ## Que completas (y solo esto)
 
-1. **Guardas de reglas de negocio** en `core/application/services/{caso}.application.ts`.
+1. **Guardas de reglas de negocio** en `core/application/services/{caso-en-kebab}.application.ts`.
    El generador las materializa como aproximaciones marcadas `(condicion inferida)` y a veces comentadas.
    - Compara cada guarda con el texto de la regla en el spec y corrige la condicion si no la refleja.
    - Una guarda comentada porque depende del resultado de la consulta (p.ej. un 404 "no encontrado"):
@@ -61,7 +61,7 @@ Si el modelo pedido no existe en este Kiro, usa el siguiente; `Auto` es la red f
 - No cambias la estructura de carpetas, el naming ni los nombres de las clases generadas.
 - No quitas las marcas `NOTA (agente/usuario)`: sirven para que el auditor y el usuario revisen.
 - No agregas `axios` (usa `fetch` nativo) ni `uuid` (usa `randomUUID` de `node:crypto`). Estan prohibidos.
-- Nada de `console.*` (usa el `LoggerService`), ni `process.env` fuera de `ConfigurationVariables`, ni `any`
+- Nada de `console.*` (usa el `LoggerService`), ni `process.env` fuera de `ConfigurationVariables` (`configuration-variables.ts`), ni `any`
   nuevo, ni `throw new Error` crudo (usa `GenericException` con el catalogo).
 - Nada de dinero con `number`/`parseFloat`: si hay montos, `decimal.js` y string en la frontera.
 

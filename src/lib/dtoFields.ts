@@ -15,6 +15,8 @@
  */
 import { existsSync, readFileSync, writeFileSync } from 'node:fs'
 import { join } from 'node:path'
+import { domainFolder, toKebab, toPropertyName } from './names.js'
+import type { AdapterType } from './adapters.js'
 
 const read = (p: string) => (existsSync(p) ? readFileSync(p, 'utf8') : '')
 
@@ -132,6 +134,50 @@ function patchEntity(file: string, className: string, fields: FieldMap, optional
 }
 
 /**
+ * Response entity of the domain: a class whose fields are @Expose'd, because the adapter builds it with Mapper
+ * (plainToInstance + excludeExtraneousValues): a field without @Expose is dropped.
+ *   - property name: camelCase of the name as it comes from the source ("tipo_bloqueo" -> tipoBloqueo)
+ *   - stored procedure / external API: @Expose({ name: '<name as the source sends it>' })
+ *   - TypeORM: the adapter maps from the TypeORM entity, whose property has the same camelCase name -> @Expose()
+ */
+function patchResponseEntity(file: string, className: string, fields: FieldMap, source: AdapterType): boolean {
+  const content = read(file)
+  if (!content) return false
+  const keys = Object.keys(fields)
+  if (keys.length === 0) return false
+  const lines: string[] = []
+  for (const key of keys) {
+    const property = toPropertyName(key)
+    lines.push(source === 'typeorm' || property === key ? '@Expose()' : `@Expose({ name: '${key}' })`)
+    lines.push(`${property}?: ${tsType(fields[key])}`)
+    lines.push('')
+  }
+  lines.pop()
+  let replaced = replaceClassBody(content, className, lines)
+  if (!replaced) return false
+  if (!/^import .*from 'class-transformer'/m.test(replaced)) replaced = `import { Expose } from 'class-transformer'\n${replaced}`
+  writeFileSync(file, replaced, 'utf8')
+  return true
+}
+
+/** TypeORM entity of the table: one @Column per output field, named after the column as it comes. */
+function patchOrmEntity(file: string, fields: FieldMap): boolean {
+  const content = read(file)
+  if (!content) return false
+  const close = content.lastIndexOf('}')
+  if (close === -1) return false
+  const added: string[] = []
+  for (const key of Object.keys(fields)) {
+    const property = toPropertyName(key)
+    if (new RegExp(`\\b${property}\\s*[?!]?\\s*:`).test(content)) continue
+    added.push(`  @Column({ name: '${key}' })\n  ${property}: ${tsType(fields[key])}\n`)
+  }
+  if (added.length === 0) return false
+  writeFileSync(file, `${content.slice(0, close)}\n${added.join('\n')}${content.slice(close)}`, 'utf8')
+  return true
+}
+
+/**
  * Aplica dtos.input al DTO de attributes + entidad request, y dtos.output a la
  * entidad response. Idempotente en la práctica (reemplaza el cuerpo de la clase).
  */
@@ -144,17 +190,20 @@ export function applyDtoFields(opts: {
   responseEntity: string // p.ej. "Product"
   input: FieldMap
   output: FieldMap
+  adapterType?: AdapterType // where the response comes from (default: stored procedure)
 }): DtoResult {
   const { projectRoot, dominio, caso, attributesClass, requestEntity, responseEntity, input, output } = opts
+  const source = opts.adapterType ?? 'sp'
   const patched: string[] = []
   const warnings: string[] = []
-  const domLower = dominio.toLowerCase()
+  const domLower = domainFolder(dominio)
   const casoCamel = caso.charAt(0).toLowerCase() + caso.slice(1)
+  const casoKebab = toKebab(caso)
   const base = join(projectRoot, 'src', domLower)
 
-  const dtoFile = join(base, 'infrastructure/http-server/dto', `${casoCamel}.dto.ts`)
-  const reqFile = join(base, 'core/domain/entities', `${requestEntity}.entity.ts`)
-  const resFile = join(base, 'core/domain/entities', `${responseEntity}.entity.ts`)
+  const dtoFile = join(base, 'infrastructure/http-server/dto', `${casoKebab}.dto.ts`)
+  const reqFile = join(base, 'core/domain/entities', `${toKebab(requestEntity)}.entity.ts`)
+  const resFile = join(base, 'core/domain/entities', `${toKebab(responseEntity)}.entity.ts`)
 
   if (Object.keys(input).length > 0) {
     try {
@@ -169,7 +218,7 @@ export function applyDtoFields(opts: {
       warnings.push(`Fallo poblando entidad request: ${e?.message}`)
     }
     try {
-      const specFile = join(base, 'core/application/services', `${casoCamel}.application.spec.ts`)
+      const specFile = join(base, 'core/application/services', `${casoKebab}.application.spec.ts`)
       if (patchApplicationSpecFixture(specFile, casoCamel, input)) patched.push(specFile)
     } catch (e: any) {
       warnings.push(`Fallo ajustando el fixture del test de application: ${e?.message}`)
@@ -178,9 +227,17 @@ export function applyDtoFields(opts: {
 
   if (Object.keys(output).length > 0) {
     try {
-      if (patchEntity(resFile, responseEntity, output, true)) patched.push(resFile)
+      if (patchResponseEntity(resFile, responseEntity, output, source)) patched.push(resFile)
     } catch (e: any) {
       warnings.push(`Fallo poblando entidad response: ${e?.message}`)
+    }
+    if (source === 'typeorm') {
+      const ormFile = join(base, 'infrastructure/sql-database/entities', `${toKebab(responseEntity)}.entity.ts`)
+      try {
+        if (patchOrmEntity(ormFile, output)) patched.push(ormFile)
+      } catch (e: any) {
+        warnings.push(`Fallo poblando la entidad TypeORM: ${e?.message}`)
+      }
     }
   }
 

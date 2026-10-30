@@ -2,7 +2,7 @@
  * The three ways a use case reaches its data source.
  * - typeorm: a TypeORM repository (the default).
  * - sp:      a stored procedure (opt-in).
- * - http:    an external API consumed with the native fetch through `consumoHttp`. It needs no database at all.
+ * - http:    an external API consumed with the native fetch through `HttpClientService`. It needs no database at all.
  */
 export const ADAPTERS = ['typeorm', 'sp', 'http'] as const
 export type AdapterType = (typeof ADAPTERS)[number]

@@ -1,6 +1,6 @@
 import { Controller, HttpCode, Post, Req } from '@nestjs/common'
 import { Request } from 'express'
-import { ResponseJsonApiBase } from '../dto/responseDataJsonApiBase'
+import { ResponseJsonApiBase } from '../dto/response-data-json-api-base'
 
 /**
  * Liveness probe, created with every new service so a fresh checkout can prove it starts:

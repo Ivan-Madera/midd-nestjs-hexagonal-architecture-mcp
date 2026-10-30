@@ -55,8 +55,8 @@ test('a new API: the first case takes 001 (application) and 002 (domain), with t
   try {
     const r = await useCase(root)
     assert.notEqual(r.isError, true, r.content[0].text)
-    assert.deepEqual(codesIn(read(root, 'src/catalog/core/application/errors/catalog.application.error.ts')), ['CAT-PRODUCT-001', 'CAT-GENERIC-000'])
-    assert.deepEqual(codesIn(read(root, 'src/catalog/core/domain/errors/catalog.domain.error.ts')), ['CAT-PRODUCT-002', 'CAT-GENERIC-000'])
+    assert.deepEqual(codesIn(read(root, 'src/catalog/core/application/errors/catalog.application.error.ts')), ['CAT-PRODUCT-001', 'CAT-GENERICERROR-000'])
+    assert.deepEqual(codesIn(read(root, 'src/catalog/core/domain/errors/catalog.domain.error.ts')), ['CAT-PRODUCT-002', 'CAT-GENERICERROR-000'])
     assert.deepEqual(usedErrorNumbers(root, 'CAT'), [0, 1, 2].filter(Boolean))
   } finally {
     rmSync(root, { recursive: true, force: true })
@@ -122,7 +122,7 @@ test('business rules take the next free numbers, not a number per position', asy
     )
     const r = await generateFromSpec({ projectRoot: root, specPath: spec, mode: 'greenfield', dryRun: false, overwrite: false })
     assert.notEqual(r.isError, true, r.content[0].text)
-    const application = read(root, 'src/catalog/core/application/services/retrieveProduct.application.ts')
+    const application = read(root, 'src/catalog/core/application/services/retrieve-product.application.ts')
     const numbers = [...application.matchAll(/code: 'CAT-[A-Z0-9]+-(\d{3})'/g)].map((m) => Number(m[1]))
     assert.deepEqual(numbers, [3, 4], 'after the 001 and 002 of the case itself')
   } finally {

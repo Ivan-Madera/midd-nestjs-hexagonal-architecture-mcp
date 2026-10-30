@@ -32,21 +32,47 @@ export const GITIGNORE = [
 export const scaffoldServiceSchema = {
   projectRoot: s.projectRoot,
   conexion: s.conexion,
-  motor: s.motor,
-  prefijoApi: s.prefijoApi,
-  prefijoError: s.prefijoError,
+  motor: s.motor.optional(),
+  prefijoApi: s.prefijoApi.optional(),
+  prefijoError: s.prefijoError.optional(),
   overwrite: s.overwrite
 }
 
 export async function scaffoldService(input: {
   projectRoot: string
   conexion?: string
-  motor: MotorChoice
-  prefijoApi: string
-  prefijoError: string
+  motor?: MotorChoice
+  prefijoApi?: string
+  prefijoError?: string
   overwrite: boolean
 }) {
-  const args = { ...input, conexion: input.conexion ?? '' }
+  // Obligatory, and never invented: the user is asked. Only what is missing is listed.
+  const questions: string[] = []
+  if (!input.prefijoApi) {
+    questions.push('prefijoApi: prefijo de la API en kebab-case. Por ejemplo, midd-catalog. Los endpoints quedaran como /<prefijo>/api/v1/{recurso}.')
+  }
+  if (!input.prefijoError) {
+    questions.push('prefijoError: prefijo de errores de la API en MAYUSCULAS. Por ejemplo, CATALOG. Los errores quedaran como CATALOG-PRODUCTNOTFOUND-001.')
+  }
+  if (!input.motor) {
+    questions.push('motor: base de datos de la API: mssql, postgres, mysql o none si no usa base de datos.')
+  }
+  if (questions.length > 0) {
+    return {
+      content: [
+        {
+          type: 'text' as const,
+          text: [
+            `ERROR: faltan datos para crear la API (${questions.map((q) => q.split(':')[0]).join(', ')}). No los inventes ni uses un valor por defecto: preguntaselos al usuario, todos en un solo mensaje:`,
+            ...questions.map((q, i) => `  ${i + 1}. ${q}`),
+            'Con sus respuestas vuelve a llamar scaffold_service. El agente middleware-generator hace estas preguntas por ti: si este chat no lo esta usando, pidele al usuario que lo seleccione en el selector de agentes.'
+          ].join('\n')
+        }
+      ],
+      isError: true
+    }
+  }
+  const args = { ...input, conexion: input.conexion ?? '' } as typeof input & { conexion: string; motor: MotorChoice; prefijoApi: string; prefijoError: string }
   // The engine is never assumed: it is asked. (The MCP schema already requires it; this guards direct calls.)
   if (!isMotorChoice(args.motor)) {
     return {
@@ -132,10 +158,10 @@ export async function scaffoldService(input: {
     if (r.skipped.length) skipped.push(f.dest)
   }
 
-  // 3) Generar .env.example sincronizado con el joiSchema (fuente de verdad).
+  // 3) Generar .env.example sincronizado con el Joi schema (fuente de verdad).
   const envPath = join(args.projectRoot, '.env.example')
   if (!existsSync(envPath) || args.overwrite) {
-    const joiText = readTemplate('shared/infrastructure/config/joiSchema.ts')
+    const joiText = readTemplate('shared/infrastructure/config/joi-schema.ts')
     mkdirSync(args.projectRoot, { recursive: true })
     writeFileSync(
       envPath,
@@ -191,7 +217,7 @@ export async function scaffoldService(input: {
             : '  - SIN base de datos (el usuario eligió none): no se generó ninguna conexión, módulo de BD, variable DB_* ni driver. Un caso de uso que consume una API externa (adapterType http) funciona sin base de datos; los de TypeORM o SP necesitan una conexión, que se crea al indicar el motor en add_use_case.',
           ...connectionWarnings.map((w) => `  ! ${w}`),
           '  - AGENTE: crea el .env a partir del .env.example con tus herramientas de archivos (sin pisar uno existente) y escribe los valores reales que te dé el usuario. Los de seguridad (CORS, RL_*) ya traen su valor por defecto: no los preguntes. El .gitignore generado ya excluye .env.',
-          '  - Añade un caso de uso con add_use_case (registra el dominio en app.module.ts automáticamente).'
+          '  - AGENTE: la base NO es el final. No cierres ni digas "sin pendientes": PIDE AL USUARIO el primer caso de uso (que hace, que recibe y que devuelve) y sigue la Fase 3 del flujo; generalo con generate_from_spec o add_use_case (registra el dominio en app.module.ts automáticamente).'
         ]
           .filter(Boolean)
           .join('\n')

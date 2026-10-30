@@ -1,6 +1,6 @@
 import { Module } from '@nestjs/common'
 import { APP_GUARD } from '@nestjs/core'
-import { RateLimitGuard } from './rateLimit.guard'
+import { RateLimitGuard } from './rate-limit.guard'
 
 /**
  * Global HTTP security armor (created ONCE per service, never per domain).

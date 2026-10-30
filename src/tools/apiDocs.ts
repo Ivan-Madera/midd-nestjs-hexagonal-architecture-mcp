@@ -7,7 +7,8 @@ import * as s from '../lib/schemas.js'
  *
  * Always: the contract (src/<module>/contracts/<module>.api.md), the Mermaid sequence diagram
  * (src/<module>/diagrams/<module>.flow.mmd) and the index (docs/api/README.md).
- * Opt-in (the agent ASKS the user): the Postman collection and the architecture-beta overview.
+ * Also always: docs/ARCHITECTURE.md (Mermaid architecture-beta overview). Nothing to ask: it is derived from the code.
+ * Opt-in (the agent ASKS the user): the Postman collection.
  * It is safe to run any time: same code, same files.
  */
 export const generateApiDocsSchema = {
@@ -24,9 +25,9 @@ export const generateApiDocsSchema = {
     ),
   architecture: z
     .boolean()
-    .default(false)
+    .default(true)
     .describe(
-      'Crear/actualizar docs/ARCHITECTURE.md con un diagrama Mermaid architecture-beta. Opcional; si el archivo ya existe se actualiza siempre.'
+      'Crear/actualizar docs/ARCHITECTURE.md con un diagrama Mermaid architecture-beta. Se genera siempre (no se pregunta al usuario); pon false solo si no se quiere.'
     )
 }
 

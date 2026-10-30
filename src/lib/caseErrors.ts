@@ -1,5 +1,6 @@
 import { existsSync, readFileSync, writeFileSync } from 'node:fs'
 import { join } from 'node:path'
+import { domainFolder } from './names.js'
 import { capitalize, entityText, formatErrorNumber, nextErrorNumbers } from './errorCodes.js'
 
 /**
@@ -34,7 +35,7 @@ export function ensureCaseErrors(opts: {
   entidad: string
 }): CaseErrorsResult {
   const { projectRoot, dominio, prefix, errorKey, slug, entidad } = opts
-  const domLower = dominio.toLowerCase()
+  const domLower = domainFolder(dominio)
   const words = entityText(entidad)
   const patched: string[] = []
   const warnings: string[] = []

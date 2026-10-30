@@ -1,6 +1,7 @@
 import { existsSync, mkdirSync, readFileSync, writeFileSync } from 'node:fs'
 import { dirname, join } from 'node:path'
 import { mcpVersion } from './inventory.js'
+import { writePreference } from './preferences.js'
 
 /**
  * Per-repo learnings: what the MCP remembers between sessions of the SAME repository.
@@ -36,7 +37,8 @@ const ISO_DATE = /^\d{4}-\d{2}-\d{2}$/
 
 /** Decisions a user can take once for the whole repo. Closed on purpose. */
 export const DECISIONS = {
-  authorization: ['enabled', 'disabled']
+  authorization: ['enabled', 'disabled'],
+  postman: ['enabled', 'disabled']
 } as const
 export type DecisionKey = keyof typeof DECISIONS
 
@@ -49,7 +51,7 @@ export const HINTS: Record<string, string> = {
   AUTHORIZATION_FAIL_OPEN: 'The authorization guard and verifier must deny when the authorizer denies or is unreachable.',
   AUTHORIZATION_NOT_REGISTERED: 'Import AuthorizationModule in AppModule when src/shared/authorization exists.',
   AUTHORIZATION_ORDER: 'Import AuthorizationModule AFTER SecurityModule so the rate limit runs first.',
-  BLIND_CAST: 'Map source fields explicitly in the adapter instead of casting a row with "as".',
+  BLIND_CAST: 'Map the row in the adapter with Mapper (fields carry @Expose) instead of casting it with "as".',
   CONSOLE_LOG: 'Use the LoggerService, never console.*.',
   CORS_WILDCARD: 'Read the CORS origins from CORS_ALLOWED_ORIGINS instead of hardcoding them in main.ts.',
   DB_CONNECTION_MISSING: 'A connection a module uses needs its database module in AppModule and its name in UtilsModule.register: create it with add_use_case.',
@@ -77,13 +79,14 @@ export const HINTS: Record<string, string> = {
   MISSING_ENV_VALIDATION: 'Every variable the service reads must be validated in the Joi schema.',
   MISSING_HTTP_SECURITY: 'Keep the security headers and CORS configuration of main.ts from scaffold_service.',
   MONEY_AS_FLOAT: 'Use decimal.js for money and keep amounts as strings at the boundary.',
-  NAMING_ENTITY: 'Name domain entities <Name>.entity.ts.',
+  NAMING_FILE_CASE: 'Name files and folders in kebab-case with a dotted type suffix, e.g. retrieve-product.controller.ts; classes stay PascalCase.',
+  NAMING_ENTITY: 'Name domain entities <name>.entity.ts (kebab-case, dot before entity).',
   NAMING_SPACES: 'File names must not contain spaces.',
   NAMING_TYPO: 'Use the canonical spellings: infrastructure, http-server, Adapter, and "<name>.entity.ts" with a dot.',
   NON_POST_ENDPOINT: 'Expose only @Post endpoints; carry the intent in the JSON:API body.',
   RAW_ERROR: 'Throw GenericException with an entry of the error catalog, never throw new Error.',
   SOURCE_IMPORT_OUTSIDE_INFRA: 'Only infrastructure adapters may import the data source (typeorm).',
-  SP_NOT_DECLARED: 'Declare every stored procedure in ConfigurationVariables, the Joi schema and .env.example.',
+  SP_NOT_DECLARED: 'Declare every stored procedure in ConfigurationVariables (configuration-variables.ts), the Joi schema and .env.example.',
   UNBOUNDED_FIND_ALL: 'Paginate lists; do not read a whole table.',
   UNTYPED_MIDDLEWARE: 'Type the middleware parameters with Request, Response and NextFunction from express.'
 }
@@ -249,9 +252,17 @@ export function learnConventions(
 }
 
 export function learnDecision(projectRoot: string, key: DecisionKey, value: string): boolean {
-  return updateLearnings(projectRoot, (draft) => {
+  const saved = updateLearnings(projectRoot, (draft) => {
     draft.decisions[key] = value
   })
+  // The same answer, in plain sight in AGENTS.md, where the user can read and change it. Never fails the caller.
+  let shown = false
+  try {
+    shown = writePreference(projectRoot, key, value === 'enabled' ? 'enabled' : 'disabled')
+  } catch {
+    /* the learnings file keeps the answer */
+  }
+  return saved || shown
 }
 
 /**
@@ -278,7 +289,7 @@ export const ADVISORY_NOTICE =
   'ni el verificador, y si algo choca mandan siempre las reglas base. Usalos para PROPONER defaults y confirmalos con ' +
   'el usuario; nunca los apliques en silencio.'
 
-export function renderLearnings(result: LoadResult): string {
+export function renderLearnings(result: LoadResult, visible: Partial<Record<DecisionKey, string>> = {}): string {
   if (result.state === 'unreadable') {
     return `APRENDIZAJES DE ESTE REPO: el archivo ${LEARNINGS_FILE} no se pudo leer (JSON invalido). Se ignora y no se modifica; ` +
       'revisalo a mano. Continua con las reglas base.'
@@ -294,14 +305,18 @@ export function renderLearnings(result: LoadResult): string {
   const conventions = lines.splice(0)
 
   const decided: string[] = []
-  if (data.decisions.authorization === 'enabled') decided.push('- Autorizacion: activada en este repo.')
-  if (data.decisions.authorization === 'disabled') {
+  // The answers the user can see (and edit) in AGENTS.md win over the ones saved in the learnings file.
+  const decisions: Partial<Record<DecisionKey, string>> = { ...data.decisions, ...visible }
+  if (decisions.authorization === 'enabled') decided.push('- Autorizacion: activada en este repo.')
+  if (decisions.authorization === 'disabled') {
     decided.push(
       '- Autorizacion: el usuario decidio NO usarla en este repo. No vuelvas a preguntar; mencionalo en el reporte y ' +
         'cambiala solo si el usuario lo pide.'
     )
   }
 
+  if (decisions.postman === 'enabled') decided.push('- Postman: el usuario quiere la coleccion; el MCP la mantiene al dia. No preguntes.')
+  if (decisions.postman === 'disabled') decided.push('- Postman: el usuario NO quiere la coleccion. No preguntes; solo se genera si lo pide.')
   const recurring = Object.entries(data.pitfalls)
     .filter(([, p]) => p.count >= PITFALL_MIN_COUNT)
     .sort(([ai, a], [bi, b]) => b.count - a.count || b.lastSeen.localeCompare(a.lastSeen) || ai.localeCompare(bi))

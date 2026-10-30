@@ -435,7 +435,7 @@ test('MCP protocol: get_learnings and record_decision are registered and work en
     await client.connect(transport)
     const tools = new Map((await client.listTools()).tools.map((t) => [t.name, t]))
     assert.ok(tools.has('get_learnings') && tools.has('record_decision'))
-    assert.deepEqual(tools.get('record_decision').inputSchema.properties.decision.enum, ['authorization'])
+    assert.deepEqual(tools.get('record_decision').inputSchema.properties.decision.enum, ['authorization', 'postman'])
 
     const empty = await client.callTool({ name: 'get_learnings', arguments: { projectRoot: root } })
     assert.match(empty.content[0].text, /todavia no hay nada util/)

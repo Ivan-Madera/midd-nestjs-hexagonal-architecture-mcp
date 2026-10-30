@@ -14,6 +14,7 @@
  */
 import { existsSync, readFileSync, writeFileSync } from 'node:fs'
 import { join } from 'node:path'
+import { domainFolder, toKebab } from './names.js'
 import { formatErrorNumber, nextErrorNumbers } from './errorCodes.js'
 
 const read = (p: string) => (existsSync(p) ? readFileSync(p, 'utf8') : '')
@@ -222,9 +223,9 @@ export function applyBusinessRules(opts: {
   const file = join(
     projectRoot,
     'src',
-    dominio.toLowerCase(),
+    domainFolder(dominio),
     'core/application/services',
-    `${casoCamel}.application.ts`
+    `${toKebab(caso)}.application.ts`
   )
   let content = read(file)
   if (!content) {

@@ -2,6 +2,7 @@ import { existsSync, mkdirSync, readFileSync, writeFileSync } from 'node:fs'
 import { dirname, join } from 'node:path'
 import { readTemplate } from './dataset.js'
 import { mcpVersion } from './inventory.js'
+import { ensurePreferencesBlock } from './preferences.js'
 
 /**
  * Agentic kit: the minimal files the consuming repo needs so any agent enters the
@@ -177,6 +178,11 @@ export function installAgenticKit(opts: {
     }),
     upsertAgentsSection(opts.projectRoot, withVersion(readTemplate('agentic/AGENTS.section.md'), version))
   ]
+  // The block of answers has its own markers: it is created once and its values are never touched afterwards.
+  const agents = results[results.length - 1]
+  if (agents.status !== 'skipped-broken-markers' && ensurePreferencesBlock(opts.projectRoot) === 'created' && agents.status === 'unchanged') {
+    agents.status = 'updated'
+  }
   return results
 }
 
@@ -198,10 +204,7 @@ const ROLE_OF_TARGET: Record<string, AgentRole> = {
   '.kiro/agents/middleware-auditor.md': 'auditor'
 }
 
-/** Is the automatic installation on? `MIDD_NESTJS_AUTO_KIT=off` (or 0 / false / no) turns it off. */
-export function autoKitEnabled(env: NodeJS.ProcessEnv = process.env): boolean {
-  return !/^(off|0|false|no)$/i.test((env.MIDD_NESTJS_AUTO_KIT ?? '').trim())
-}
+export { autoKitEnabled } from './kitSwitch.js'
 
 export function ensureAgenticKit(projectRoot: string): KitEnsureResult {
   const version = mcpVersion()
@@ -228,7 +231,8 @@ export function ensureAgenticKit(projectRoot: string): KitEnsureResult {
     const missing = existing.filter((e) => e.kind === 'missing')
     const outdated = existing.filter((e) => e.kind === 'managed' && e.version !== version)
     const agentsSection = join(projectRoot, 'AGENTS.md')
-    const hasSection = existsSync(agentsSection) && readFileSync(agentsSection, 'utf8').includes(AGENTS_BEGIN)
+    const agentsText = existsSync(agentsSection) ? readFileSync(agentsSection, 'utf8') : ''
+    const hasSection = agentsText.includes(AGENTS_BEGIN) && agentsText.includes('<!-- BEGIN midd-nestjs-preferences')
     if (missing.length === 0 && outdated.length === 0 && hasSection) return { state: 'present', files: [] }
 
     // Keep the models the team chose (the version marker is what says a file is out of date, not its content).

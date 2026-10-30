@@ -175,7 +175,7 @@ test('refactor, explicit request with the engine: the connection is created, nam
     const env = read(root, '.env.example')
     assert.match(env, /^DB_POSTGRES_PORT=5432$/m)
     assert.deepEqual(listConnections(root), [{ name: 'Postgres', motor: 'postgres' }])
-    assert.match(read(root, 'src/stock/infrastructure/infrastructure.stock.module.ts'), /'PostgresConnection'/)
+    assert.match(read(root, 'src/stock/infrastructure/stock.infrastructure.module.ts'), /'PostgresConnection'/)
     // asking again does not create a second one
     const again = await refactor(root, { crearConexion: true, motor: 'postgres', dominio: 'billing', caso: 'RetrieveInvoice', entidad: 'Invoice', accion: 'retrieveInvoice' })
     assert.notEqual(again.isError, true, again.content[0].text)
@@ -191,13 +191,13 @@ test('refactor, explicit request in a project that already has its own connectio
   try {
     const plain = await refactor(root, { dominio: 'orders', caso: 'RetrieveOrder', entidad: 'Order', accion: 'retrieveOrder' })
     assert.notEqual(plain.isError, true, plain.content[0].text)
-    assert.match(read(root, 'src/orders/infrastructure/infrastructure.orders.module.ts'), /'LegacyConnection'/, 'without the request the project connection is reused')
+    assert.match(read(root, 'src/orders/infrastructure/orders.infrastructure.module.ts'), /'LegacyConnection'/, 'without the request the project connection is reused')
     assert.deepEqual(listConnections(root), [], 'and nothing is created')
 
     const asked = await refactor(root, { crearConexion: true, motor: 'mysql' })
     assert.notEqual(asked.isError, true, asked.content[0].text)
     assert.deepEqual(listConnections(root), [{ name: 'Mysql', motor: 'mysql' }])
-    assert.match(read(root, 'src/stock/infrastructure/infrastructure.stock.module.ts'), /'MysqlConnection'/)
+    assert.match(read(root, 'src/stock/infrastructure/stock.infrastructure.module.ts'), /'MysqlConnection'/)
   } finally {
     rmSync(root, { recursive: true, force: true })
   }
@@ -218,7 +218,7 @@ test('refactor from a spec: "create: true" with the engine creates it; "none" or
     const reused = await generateFromSpec({ projectRoot: reuse, specPath: spec2, mode: 'refactor', dryRun: false, overwrite: false })
     assert.notEqual(reused.isError, true, reused.content[0].text)
     assert.deepEqual(listConnections(reuse), [])
-    assert.match(read(reuse, 'src/inventory/infrastructure/infrastructure.inventory.module.ts'), /'LegacyConnection'/)
+    assert.match(read(reuse, 'src/inventory/infrastructure/inventory.infrastructure.module.ts'), /'LegacyConnection'/)
   } finally {
     rmSync(withCreate, { recursive: true, force: true })
     rmSync(reuse, { recursive: true, force: true })

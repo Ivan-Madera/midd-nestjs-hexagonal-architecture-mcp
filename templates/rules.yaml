@@ -34,43 +34,53 @@ principios:
   - "Consistencia por encima de preferencia personal: todo módulo nuevo luce igual que el canónico."
 
 # ─── Estructura de carpetas (vertical slice por dominio) ───────────────────
-# Carpeta de dominio en lowercase; clases en PascalCase (independiente del case
+# Carpetas y archivos en kebab-case con sufijo de tipo (retrieve-product.controller.ts); clases en PascalCase (independiente del case
 # con que se pase el nombre del dominio). Un dominio agrupa N casos de uso.
 estructura:
-  raiz_dominio: "src/<dominio-lowercase>/"
+  raiz_dominio: "src/<dominio-kebab>/"   # en los archivos de abajo <dominio>, <caso> y <entidad> van en kebab-case (store-configuration, retrieve-product, product)
   arbol:
     - "<dominio>.module.ts                                  # módulo raíz del bounded context (ensambla core + infra)"
     - "core/"
     - "core/<dominio>.core.module.ts                        # register(): factories de domain/application services + tokens"
     - "core/domain/entities/                                # entidades de dominio PURAS (sin decoradores de framework)"
-    - "core/domain/ports/inbound/I<Caso>Service.ts          # puerto DRIVING (lo que el caso ofrece hacia adentro)"
-    - "core/domain/ports/outbound/I<Caso>Repository.ts      # puerto DRIVEN (lo que el caso necesita de afuera)"
+    - "core/domain/ports/inbound/<caso>.inbound.port.ts     # puerto DRIVING (lo que el caso ofrece hacia adentro)"
+    - "core/domain/ports/outbound/<caso>.outbound.port.ts   # puerto DRIVEN (lo que el caso necesita de afuera)"
     - "core/domain/services/<caso>.domain.service.ts        # lógica de dominio; implementa el puerto inbound"
     - "core/domain/errors/<dominio>.domain.error.ts         # catálogo de errores de dominio (code/title/status)"
-    - "core/application/interfaces/I<Caso>Application.ts     # contrato del caso de uso de aplicación"
+    - "core/application/interfaces/<caso>.application.interface.ts # contrato del caso de uso de aplicación"
     - "core/application/services/<caso>.application.ts       # orquesta reglas de negocio; usa puerto inbound + config"
     - "core/application/errors/<dominio>.application.error.ts"
-    - "infrastructure/infrastructure.<dominio>.module.ts     # declara adapters + TypeOrmModule.forFeature (si aplica)"
+    - "infrastructure/<dominio>.infrastructure.module.ts   # declara adapters + TypeOrmModule.forFeature (si aplica)"
     - "infrastructure/adapters/<caso>.typeorm.adapter.ts     # adapter TypeORM (default) — implementa el puerto outbound"
     - "infrastructure/adapters/<caso>.sp.adapter.ts          # adapter Stored Procedure (opt-in) — implementa el puerto outbound"
     - "infrastructure/http-server/http-server.module.ts"
     - "infrastructure/http-server/controllers/<caso>.controller.ts  # JSON:API + @Controller({ path, version }) + try/catch -> CustomHttpException"
     - "infrastructure/http-server/dto/<caso>.dto.ts                 # class de attributes con class-validator"
-    - "infrastructure/http-server/dto/<caso>RequestJsonApi.dto.ts   # envoltura JSON:API { data: { attributes } }"
-    - "infrastructure/sql-database/entities/<Entidad>.entity.ts     # entidad TypeORM (solo si adapter=typeorm)"
+    - "infrastructure/http-server/dto/<caso>-request-json-api.dto.ts  # envoltura JSON:API { data: { attributes } }"
+    - "infrastructure/sql-database/entities/<entidad>.entity.ts     # entidad TypeORM (solo si adapter=typeorm)"
 
 # ─── Naming (convenciones de nombres) ───────────────────────────────────────
 naming:
-  carpeta_dominio: "lowercase"            # p.ej. src/catalog/ (aunque el dominio se pase como 'Catalog')
-  clases: "PascalCase"                    # p.ej. CatalogController, RetrieveProductAdapter
+  idioma_de_los_nombres: "INGLES"         # modulo, entidad, casos de uso, metodos, accion y resource_type van en ingles (StoreConfiguration, RetrieveExchangeRate); los textos de error van en espanol
+  carpetas_y_archivos: "kebab-case con sufijo de tipo separado por puntos"   # store-configuration/, retrieve-product.controller.ts, retrieve-product.inbound.port.ts
+  carpeta_dominio: "kebab-case"           # p.ej. src/store-configuration/ (el dominio se pasa como 'StoreConfiguration')
+  clases: "PascalCase"                    # p.ej. StoreConfigurationModule, RetrieveProductAdapter (tambien interfaces y tipos)
+  interfaces: "prefijo I + PascalCase"    # IRetrieveProductService (canon del area)
   metodos_y_params: "camelCase"
   prefijo_error: "MAYUSCULAS"             # p.ej. CATALOG
-  puerto_inbound: "I<Caso>Service"        # interface del servicio de dominio (driving)
-  puerto_outbound: "I<Caso>Repository"    # interface del repositorio/fuente (driven)
-  archivo_entidad: "<nombre>.entity.ts"   # SIEMPRE con punto antes de 'entity'
+  puerto_inbound: "I<Caso>Service"        # archivo <caso>.inbound.port.ts; interface del servicio de dominio (driving)
+  puerto_outbound: "I<Caso>Repository"    # archivo <caso>.outbound.port.ts; interface del repositorio/fuente (driven)
+  archivo_entidad: "<nombre-kebab>.entity.ts"   # SIEMPRE con punto antes de 'entity'
   archivo_adapter_typeorm: "<caso>.typeorm.adapter.ts"
+  archivo_adapter_http: "<caso>.http.adapter.ts"
+  archivo_dto: "<caso>.dto.ts y <caso>-request-json-api.dto.ts"
+  archivo_modulos: "<dominio>.module.ts, <dominio>.core.module.ts, <dominio>.infrastructure.module.ts"
+  archivo_errores: "<dominio>.domain.error.ts y <dominio>.application.error.ts"
+  verificacion: "verify_standards avisa NAMING_FILE_CASE (WARN) ante un archivo o carpeta que no sea kebab-case"
   archivo_adapter_sp: "<caso>.sp.adapter.ts"
   archivo_controller: "<caso>.controller.ts"
+  propiedades_y_campos: "camelCase"        # p.ej. tipoBloqueo (guia de estilo de TypeScript: PascalCase es para clases y tipos). Las palabras se dejan como vienen de la fuente (espanol si la columna esta en espanol); solo cambia el case
+  mapeo_desde_la_fuente: "entidad de dominio de respuesta = clase con @Expose en cada campo; el adapter la construye con Mapper/MapperList (plainToInstance + excludeExtraneousValues: un campo sin @Expose se pierde). SP o API externa: @Expose({ name: '<nombre tal como lo envia la fuente>' }). TypeORM: la entidad TypeORM tiene @Column({ name: '<columna>' }) sobre una propiedad camelCase y la entidad de dominio usa @Expose() con ese mismo nombre. Nunca se castea una fila con 'as' (BLIND_CAST)."
   tokens_inyeccion: "CONSTANTE_EN_MAYUSCULAS"   # p.ej. RETRIEVEPRODUCT_APPLICATION (string tokens)
   # Anti-patrones: errores ortográficos observados en el canon que NO deben
   # replicarse. verify_standards los marca como ERROR bloqueante.
@@ -87,7 +97,7 @@ naming:
 # y su entidad response tipadas (NO `string` genérico). El puerto outbound
 # refleja esos mismos métodos hacia la fuente de datos.
 puertos:
-  modelo: "un caso de uso = 1 puerto inbound (I<Caso>Service) + 1 puerto outbound (I<Caso>Repository) + N métodos"
+  modelo: "un caso de uso = 1 puerto inbound (I<Caso>Service en <caso>.inbound.port.ts) + 1 puerto outbound (I<Caso>Repository) + N métodos"
   metodos:
     firma: "<metodo>(data: <EntidadRequest>): Promise<<EntidadResponse>>"
     reglas:
@@ -98,7 +108,7 @@ puertos:
       - "El puerto inbound y el outbound exponen EXACTAMENTE los mismos métodos; el domain service delega 1:1 en el repositorio."
       - "Branching de negocio (elegir entre operaciones según un valor): modélalo como MÉTODOS distintos del puerto (uno por variante), no pasando el nombre del SP. Si el application service necesita decidir, inyecta config y llama al método correspondiente."
   ejemplo_inbound: |
-    // core/domain/ports/inbound/IRetrieveLockTypeService.ts
+    // core/domain/ports/inbound/retrieve-lock-type.inbound.port.ts
     import { BaseClassLockType } from '../../entities/baseClassLockType.entity'
     import { LockTypeResponse } from '../../entities/lockTypeResponse.entity'
     import { RetrieveLockTypeTvRequest } from '../../entities/retrieveLockTypeTvRequest.entity'
@@ -127,12 +137,13 @@ entidades:
     - "Usa @Expose({ name: '<columna_real>' }) para mapear snake_case/columnas de BD a la propiedad de dominio."
     - "La entidad TypeORM (sql-database/entities/*.entity.ts) es DISTINTA de la entidad de dominio; solo existe con adapter=typeorm."
   ejemplo_response: |
-    // core/domain/entities/lockTypeResponse.entity.ts  (DESTILADO del canon)
+    // core/domain/entities/lock-type-response.entity.ts  (DESTILADO del canon)
     import { Expose } from 'class-transformer'
 
     export class LockTypeResponse {
+      // El canon escribe la propiedad en PascalCase (LockTypeId); el estandar del MCP es camelCase.
       @Expose({ name: 'tipo_bloqueo' })
-      LockTypeId: number
+      tipoBloqueo?: number
     }
 
 # ─── DTOs de frontera (capa HTTP, JSON:API) ─────────────────────────────────
@@ -156,7 +167,7 @@ acceso_datos:
   sp_es_opt_in: true            # Stored Procedure requiere adapterType='sp' + nombreSp explícito
   motores: [mssql, postgres, mysql]
   reglas:
-    - "Un caso de uso puede leer de una BASE DE DATOS (adapter typeorm o sp) o consumir una API EXTERNA (adapter http). El adapter http usa el fetch nativo vía consumoHttp (nunca axios), NO necesita conexión ni motor y es lo habitual cuando el servicio no usa base de datos."
+    - "Un caso de uso puede leer de una BASE DE DATOS (adapter typeorm o sp) o consumir una API EXTERNA (adapter http). El adapter http usa el fetch nativo vía HttpClientService (nunca axios), NO necesita conexión ni motor y es lo habitual cuando el servicio no usa base de datos."
     - "Adapter http: la URL base de cada API vive en <NOMBRE>_BASE_URL (ConfigurationVariables.externalApis + Joi .uri().required() + sección External APIs de .env.example), el verbo y la ruta son detalle del adapter (GET envía la request como query string; POST/PUT como cuerpo JSON) y el puerto de dominio solo ve data. Un 404 de la API es null (lo decide el application service); no alcanzar la API, un timeout o cualquier otro error HTTP lanza EXTERNAL_API_ERROR del catálogo (502). Las credenciales, si la API las pide, salen de ConfigurationVariables, nunca del código."
     - "Si en una API nueva el usuario responde que NO usa base de datos (motor none), no se genera ninguna conexión, ni módulo de BD, ni variables DB_*, ni driver; los adapters TypeORM y SP quedan rechazados hasta que se indique un motor."
     - "REFACTOR: la conexión del proyecto se reutiliza. Si el proyecto no tiene ninguna, el MCP NO crea una; solo si el usuario la pide expresamente (crearConexion=true / connection.create) se pregunta el motor y se procede a crearla."
@@ -167,21 +178,21 @@ acceso_datos:
     - "Las entidades se cargan con autoLoadEntities: true; el módulo de cada dominio las declara con TypeOrmModule.forFeature([...], '<Conexion>Connection')."
     - "El área NO usa stored procedures en PostgreSQL: en una conexión postgres solo se usa TypeORM y el MCP rechaza adapterType sp. Los SP se invocan según el dialecto: mssql EXEC, mysql CALL. El adapter SP inyecta el servicio de SU conexión."
     - "TypeORM es el default. Stored Procedure es opt-in explícito (nunca se asume)."
-    - "El adapter SP ejecuta vía IdatabaseCommonService.executeStoredProcedure(sp, data, true) y mapea con Mapper(Clase, resultado)."
+    - "El adapter SP ejecuta vía IDatabaseCommonService.executeStoredProcedure(sp, data, true) y mapea con Mapper(Clase, resultado)."
     - "Hexagonal puro: el adapter SP resuelve el nombre del SP desde ConfigurationVariables.storedProcedures.<Nombre> INTERNAMENTE. El nombre del SP NO viaja por el puerto (es infraestructura)."
     - "El Mapper usa class-transformer con excludeExtraneousValues: true (solo propiedades @Expose)."
   ejemplo_adapter_sp: |
-    // infrastructure/adapters/retrieveLockTypes.adapter.ts
+    // infrastructure/adapters/retrieve-lock-types.sp.adapter.ts
     import { Inject } from '@nestjs/common'
     import { ConfigType } from '@nestjs/config'
-    import { IdatabaseCommonService } from '../../../Shared/utils/interfaces/IdatabaseCommonService'
-    import { DATABASE_COMMON_PROCESS_SERVICES_ADAPTER } from '../../../Shared/utils/utils.module'
-    import ConfigurationVariables from '../../../Shared/infrastructure/config/ConfigurationVariables'
-    import { Mapper } from '../../../Shared/utils/services/mapService'
+    import { IDatabaseCommonService } from '../../../shared/utils/interfaces/database-common.service.interface'
+    import { DATABASE_COMMON_PROCESS_SERVICES_ADAPTER } from '../../../shared/utils/utils.module'
+    import ConfigurationVariables from '../../../shared/infrastructure/config/configuration-variables'
+    import { Mapper } from '../../../shared/utils/services/map.service'
 
     export class retrieveLockTypeRepositoryAdapter implements IRetrieveLockTypeRepository {
       constructor(
-        @Inject(DATABASE_COMMON_PROCESS_SERVICES_ADAPTER) private readonly dbProcessCommon: IdatabaseCommonService,
+        @Inject(DATABASE_COMMON_PROCESS_SERVICES_ADAPTER) private readonly dbProcessCommon: IDatabaseCommonService,
         @Inject(ConfigurationVariables.KEY) private readonly config: ConfigType<typeof ConfigurationVariables>
       ) {}
 
@@ -215,7 +226,7 @@ reglas_negocio:
     - "Guardas que dependen del resultado (404) o de un método de puerto inexistente (unicidad) se generan COMENTADAS para evitar romper la compilación; el dev las activa."
     - "A falta de asociación regla↔caso en el spec, las reglas se aplican al PRIMER caso; muévelas si pertenecen a otro."
   ejemplo_guarda: |
-    // core/application/services/retrieveLockTypes.application.ts  (DESTILADO del canon)
+    // core/application/services/retrieve-lock-types.application.ts  (DESTILADO del canon)
     if (!lockType?.LockTypeId) {
       throw new GenericException(
         `No hay un tipo de bloqueo definido para este IMEI ${data.imei}.`,
@@ -302,7 +313,7 @@ seguridad:
     - "Nunca commitear secretos reales; .env.example solo con placeholders."
     - "Nada lee process.env fuera de ConfigurationVariables (ENV_DIRECT). Los valores se leen de forma perezosa dentro de registerAs, después de que ConfigModule cargó y validó el .env."
   logs:
-    - "Nunca loguear credenciales: consumoHttp redacta Authorization/Cookie/x-api-key antes de loguear las cabeceras de un error."
+    - "Nunca loguear credenciales: HttpClientService redacta Authorization/Cookie/x-api-key antes de loguear las cabeceras de un error."
     - "Nunca console.* (CONSOLE_LOG): usar LoggerService, que antepone el correlation id a cada línea."
 
 # ─── Autorización del borde HTTP (OPT-IN: el agente PREGUNTA) ───────────────
@@ -311,7 +322,7 @@ autorizacion:
   herramienta: "add_authorization (se crea UNA vez por servicio en src/shared/authorization; idempotente)."
   diseno:
     puerto: "IAuthorizationVerifier (rol Verifier). Devuelve AuthorizationDecision { allowed, reason }, nunca un boolean pelado, para poder crecer sin romper llamadores. 'reason' es solo para logs del servidor."
-    adapter_por_defecto: "MacropayApiAuthorizationVerifier: POST {AUTHORIZATION_API_URL}/auth/validity con el Bearer del FRONT reenviado (no una credencial del servidor). 2xx = permitido. Usa consumoHttp (fetch nativo)."
+    adapter_por_defecto: "MacropayApiAuthorizationVerifier: POST {AUTHORIZATION_API_URL}/auth/validity con el Bearer del FRONT reenviado (no una credencial del servidor). 2xx = permitido. Usa HttpClientService (fetch nativo)."
     guard: "AuthorizationGuard global (APP_GUARD): extrae el Bearer, pregunta al puerto y lanza 401 (sin token) o 403 (denegado). La lógica HTTP vive en el adapter, nunca en el guard."
     modulo: "AuthorizationModule es el ÚNICO lugar que nombra el verifier concreto. Cambiar de autorizador = cambiar la línea useClass."
   reglas:
@@ -344,16 +355,16 @@ aprendizaje:
 dependencias:
   prohibidas:
     axios:
-      usar_en_su_lugar: "fetch nativo. El cliente del área es shared/utils/services/consumoHttp.ts."
+      usar_en_su_lugar: "fetch nativo. El cliente del área es shared/utils/services/http-client.service.ts."
       por_que: "Menos superficie de ataque y de CVEs, una dependencia menos que actualizar. Node >= 22 trae fetch y AbortSignal.timeout."
-      contrato_de_consumoHttp:
+      contrato_de_HttpClientService:
         - "No lanza: ante error devuelve { status, data: null, statusText, responseErrorApi } para que el adapter decida qué DomainError/GenericException lanzar."
         - "Nunca asume que la respuesta es JSON: un body vacío o no JSON no tumba al llamador."
         - "Timeout con AbortSignal.timeout (30 s por defecto, configurable por llamada con timeoutMs)."
         - "Reenvía x-correlation-id y redacta Authorization/Cookie/x-api-key en los logs. No loguea el body ni la query (pueden llevar credenciales)."
         - "statusText en fallas de red: ETIMEDOUT, ECONNREFUSED, ENOTFOUND (el código real del sistema)."
     uuid:
-      usar_en_su_lugar: "randomUUID de 'node:crypto' (ver shared/utils/services/GeneratorUuidService.ts)."
+      usar_en_su_lugar: "randomUUID de 'node:crypto' (ver shared/utils/services/generator-uuid.service.ts)."
       por_que: "El paquete es solo ESM: compila pero revienta con ERR_REQUIRE_ESM en un build CommonJS. randomUUID es nativo y sin dependencias."
   alcance_de_la_regla: "Se prohíbe DECLARAR o IMPORTAR estos paquetes (FORBIDDEN_DEPENDENCY / ESM_ONLY_IMPORT). Que aparezcan como dependencia interna de terceros (p.ej. uuid dentro de typeorm o mssql) es ajeno al proyecto y no se puede evitar."
   http_en_core: "El core (domain/application) nunca hace HTTP directo (HTTP_IN_CORE): llega al exterior solo por un puerto outbound implementado en infrastructure."
@@ -371,7 +382,7 @@ observabilidad:
     por_que_node_crypto: "El paquete npm 'uuid' es solo ESM: compila pero revienta con ERR_REQUIRE_ESM en un build CommonJS. randomUUID es nativo y sin dependencias (ESM_ONLY_IMPORT lo detecta)."
     debe_aparecer_en:
       - "CADA línea de log del request (AsyncLocalStorage, sin pasarlo a mano por las funciones)."
-      - "Las llamadas salientes a fuentes externas (consumoHttp lo reenvía como x-correlation-id)."
+      - "Las llamadas salientes a fuentes externas (HttpClientService lo reenvía como x-correlation-id)."
       - "El header de la respuesta."
       - "El sobre de error: errors[] + meta.correlationId."
 
@@ -385,7 +396,7 @@ documentacion:
   opt_in_el_agente_pregunta:
     - "Colección de Postman v2.1: docs/api/middleware.postman_collection.json. UNA para todo el servicio, una carpeta por módulo; se fusiona sin tocar las demás carpetas."
     - "docs/ARCHITECTURE.md con un diagrama Mermaid architecture-beta (11.1+; las líneas align requieren 11.16+)."
-  se_mantiene_al_dia: "add_use_case, generate_from_spec y record_architecture regeneran el contrato y el diagrama del módulo; Postman y ARCHITECTURE.md solo si ya existen (el usuario ya los pidió)."
+  se_mantiene_al_dia: "add_use_case, generate_from_spec y record_architecture regeneran el contrato y el diagrama del módulo; docs/ARCHITECTURE.md se regenera siempre; Postman solo si ya existe (el usuario ya lo pidió)."
   verificador: "API_DOCS_MISSING y API_DOCS_STALE (WARN, no bloquean): falta el contrato/diagrama de un módulo, o el contrato no lista un endpoint del código."
 
 # ─── Complejidad (metadato clasificatorio, NO motor de sobre-ingeniería) ────

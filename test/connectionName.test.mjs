@@ -60,7 +60,7 @@ test('a use case without a connection name reuses the single connection of that 
     assert.notEqual(r.isError, true, r.content[0].text)
     assert.deepEqual(dbFiles(root), before, 'no second connection was created')
     assert.doesNotMatch(read(root, '.env.example'), /DB_MSSQL2_/)
-    assert.match(read(root, 'src/stock/infrastructure/infrastructure.stock.module.ts'), /'MssqlConnection'/)
+    assert.match(read(root, 'src/stock/infrastructure/stock.infrastructure.module.ts'), /'MssqlConnection'/)
     // not even the engine is needed when the project has exactly one connection
     const again = await useCase(root, { dominio: 'billing', caso: 'RetrieveInvoice', entidad: 'Invoice', accion: 'retrieveInvoice' })
     assert.notEqual(again.isError, true, again.content[0].text)
@@ -78,7 +78,7 @@ test('another engine gets its own connection named after it, with its own variab
     const env = read(root, '.env.example')
     assert.match(env, /^DB_POSTGRES_PORT=5432$/m)
     assert.match(env, /^DB_MSSQL_PORT=1433$/m)
-    assert.match(read(root, 'src/stock/infrastructure/infrastructure.stock.module.ts'), /'PostgresConnection'/)
+    assert.match(read(root, 'src/stock/infrastructure/stock.infrastructure.module.ts'), /'PostgresConnection'/)
     assert.equal(verify(root).errors.length, 0, JSON.stringify(verify(root).errors))
   } finally {
     rmSync(root, { recursive: true, force: true })
@@ -273,7 +273,7 @@ test('refactor: the only named connection of the project is found and reused, wi
   try {
     const r = await refactorCase(root)
     assert.notEqual(r.isError, true, r.content[0].text)
-    assert.match(read(root, 'src/stock/infrastructure/infrastructure.stock.module.ts'), /'LegacyConnection'/)
+    assert.match(read(root, 'src/stock/infrastructure/stock.infrastructure.module.ts'), /'LegacyConnection'/)
     nothingCreated(root)
   } finally {
     rmSync(root, { recursive: true, force: true })
@@ -285,7 +285,7 @@ test('refactor: an engine is not needed either, the project owns its connection'
   try {
     const withEngine = await refactorCase(root, { motor: 'postgres' })
     assert.notEqual(withEngine.isError, true, withEngine.content[0].text)
-    assert.match(read(root, 'src/stock/infrastructure/infrastructure.stock.module.ts'), /'LegacyConnection'/, 'the engine does not rename or create anything')
+    assert.match(read(root, 'src/stock/infrastructure/stock.infrastructure.module.ts'), /'LegacyConnection'/, 'the engine does not rename or create anything')
     nothingCreated(root)
   } finally {
     rmSync(root, { recursive: true, force: true })
@@ -301,7 +301,7 @@ test('refactor: with several named connections the caller says which one the use
     assert.equal(existsSync(join(root, 'src/stock')), false, 'nothing was written')
     const chosen = await refactorCase(root, { conexion: 'Orders' })
     assert.notEqual(chosen.isError, true, chosen.content[0].text)
-    assert.match(read(root, 'src/stock/infrastructure/infrastructure.stock.module.ts'), /'OrdersConnection'/)
+    assert.match(read(root, 'src/stock/infrastructure/stock.infrastructure.module.ts'), /'OrdersConnection'/)
     nothingCreated(root)
   } finally {
     rmSync(root, { recursive: true, force: true })
@@ -313,7 +313,7 @@ test('refactor: the default forRoot connection needs no name at all', async () =
   try {
     const r = await refactorCase(root, { connectionStyle: 'default' })
     assert.notEqual(r.isError, true, r.content[0].text)
-    assert.doesNotMatch(read(root, 'src/stock/infrastructure/infrastructure.stock.module.ts'), /Connection'/, 'adapters inject no connection name')
+    assert.doesNotMatch(read(root, 'src/stock/infrastructure/stock.infrastructure.module.ts'), /Connection'/, 'adapters inject no connection name')
     nothingCreated(root)
   } finally {
     rmSync(root, { recursive: true, force: true })

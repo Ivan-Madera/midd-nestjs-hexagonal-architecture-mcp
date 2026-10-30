@@ -1,8 +1,8 @@
 import { DynamicModule, Module, Provider } from '@nestjs/common'
 import { DataSource } from 'typeorm'
 import { getDataSourceToken } from '@nestjs/typeorm'
-import { consumoHttp } from './services/consumoHttp'
-import { DatabaseCommonService } from './services/databaseCommonService'
+import { HttpClientService } from './services/http-client.service'
+import { DatabaseCommonService } from './services/database-common.service'
 
 /**
  * Tokens de inyección de los servicios de utilería.
@@ -32,7 +32,7 @@ export class UtilsModule {
     const httpServiceProvider: Provider = {
       provide: HTTP_SERVICES_ADAPTER,
       useFactory() {
-        return new consumoHttp()
+        return new HttpClientService()
       },
       inject: []
     }

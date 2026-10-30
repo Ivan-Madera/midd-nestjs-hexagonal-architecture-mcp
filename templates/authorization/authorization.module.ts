@@ -2,7 +2,7 @@ import { Global, Module } from '@nestjs/common'
 import { APP_GUARD } from '@nestjs/core'
 import { AuthorizationGuard } from './authorization.guard'
 import { AUTHORIZATION_VERIFIER } from './authorization.tokens'
-import { MacropayApiAuthorizationVerifier } from './infrastructure/MacropayApiAuthorizationVerifier'
+import { MacropayApiAuthorizationVerifier } from './infrastructure/macropay-api-authorization-verifier'
 
 /**
  * Composition root of authorization: the ONLY place naming the concrete verifier.

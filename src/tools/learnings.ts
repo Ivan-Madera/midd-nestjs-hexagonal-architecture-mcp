@@ -1,5 +1,6 @@
 import { z } from 'zod'
 import { DECISIONS, learnDecision, loadLearnings, renderLearnings, type DecisionKey } from '../lib/learnings.js'
+import { readPreferences } from '../lib/preferences.js'
 import * as s from '../lib/schemas.js'
 
 // ---------------------------------------------------------------------------
@@ -10,7 +11,8 @@ export const getLearningsSchema = {
 }
 
 export async function getLearnings(args: { projectRoot: string }) {
-  return { content: [{ type: 'text' as const, text: renderLearnings(loadLearnings(args.projectRoot)) }] }
+  // What the user wrote in AGENTS.md wins over what was saved in the learnings file: it is the one he can edit.
+  return { content: [{ type: 'text' as const, text: renderLearnings(loadLearnings(args.projectRoot), readPreferences(args.projectRoot)) }] }
 }
 
 // ---------------------------------------------------------------------------
@@ -20,8 +22,8 @@ export const recordDecisionSchema = {
   projectRoot: s.projectRoot,
   decision: z
     .enum(Object.keys(DECISIONS) as [DecisionKey, ...DecisionKey[]])
-    .describe('Decision del usuario para todo el repo. Lista cerrada: authorization.'),
-  value: z.string().describe('authorization: "enabled" o "disabled" (solo si el usuario lo dijo de forma explicita).')
+    .describe('Decision del usuario para todo el repo. Lista cerrada: authorization y postman (coleccion de Postman).'),
+  value: z.string().describe('"enabled" o "disabled" (solo si el usuario lo dijo de forma explicita). Se guarda en AGENTS.md, a la vista, para no volver a preguntarlo.')
 }
 
 export async function recordDecision(args: { projectRoot: string; decision: DecisionKey; value: string }) {
@@ -32,13 +34,14 @@ export async function recordDecision(args: { projectRoot: string; decision: Deci
       isError: true
     }
   }
+  // Saved in the learnings file and shown in AGENTS.md (learnDecision does both).
   const changed = learnDecision(args.projectRoot, args.decision, args.value)
   return {
     content: [
       {
         type: 'text' as const,
         text: changed
-          ? `Decision registrada: ${args.decision} = ${args.value} (docs/mcp-learnings.json).`
+          ? `Decision registrada: ${args.decision} = ${args.value} (docs/mcp-learnings.json y AGENTS.md).`
           : `Sin cambios: ${args.decision} ya era ${args.value}, o docs/mcp-learnings.json no se pudo actualizar.`
       }
     ]

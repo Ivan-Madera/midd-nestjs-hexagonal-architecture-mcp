@@ -77,8 +77,9 @@ PASO 1 — Pide al usuario estos datos GENERALES de la API (en un solo bloque, u
    - "¿Este servicio exige autorización de los requests? (sí/no)". Si dice que sí, pide también la URL base de la
      API de autorización. Si dice que no, no la generes y deja constancia en el reporte final.
   Documentación opcional (pregunta, no la decidas tú):
-   - "¿Genero la colección de Postman?" y "¿Genero docs/ARCHITECTURE.md con el diagrama general?". El contrato y el diagrama de
-     secuencia por módulo se generan siempre. Si dice que sí, llama generate_api_docs con postman=true y/o architecture=true.$1 (lo arma el agente middleware-generator): llama generate_from_spec
+   - "¿Genero la colección de Postman?". El contrato, el diagrama de secuencia por módulo y docs/ARCHITECTURE.md se generan siempre
+     (no se preguntan). Si dice que sí a Postman, llama generate_api_docs con postman=true.
+  - Si hay un middleware.spec.yaml (lo arma el agente middleware-generator): llama generate_from_spec
     con dryRun=false y NO uses un caso de ejemplo. El spec ya contesta lo que el PASO 1 pregunta; no lo repitas.
   - Si NO hay spec: llama add_use_case con un caso de uso de ejemplo (el recurso da igual; sirve para que el servicio nazca completo).
     add_use_case registra el dominio en app.module.ts automáticamente (no hace falta editar a mano).
@@ -87,13 +88,13 @@ PASO 1 — Pide al usuario estos datos GENERALES de la API (en un solo bloque, u
 
 PASO 2 — Genera la base:
   - Llama scaffold_service con projectRoot, motor, prefijoApi, prefijoError (sin conexion: la nombra el motor).
-    (Genera shared + config + main.ts + app.module.ts con la conexión ya cableada, y .env.example desde el joiSchema.)
+    (Genera shared + config + main.ts + app.module.ts con la conexión ya cableada, y .env.example desde joi-schema.ts.)
   - Llama add_use_case con un caso de uso de ejemplo (el recurso da igual; sirve para que el servicio nazca completo).
     add_use_case registra el dominio en app.module.ts automáticamente (no hace falta editar a mano).
 
 PASO 3 — Prepara el proyecto:
   - Fusiona templates/config/package.snippet.json en el package.json del servicio (get_template para leerlo).
-  - NO agregues axios ni uuid (están prohibidos): HTTP con fetch nativo (consumoHttp) y ids con randomUUID de node:crypto.
+  - NO agregues axios ni uuid (están prohibidos): HTTP con fetch nativo (HttpClientService) y ids con randomUUID de node:crypto.
   - Crea TÚ el .env a partir de .env.example (sin pisar uno existente) con los valores REALES que dio el usuario en el PASO 1; nunca
     le pidas al usuario que lo haga. No repitas contraseñas en tus respuestas. Antes comprueba que .gitignore ignora .env.
   - Corre TÚ (shell): npm install, luego npm run build.
@@ -118,7 +119,7 @@ PASO 5 — Cierra con verify_standards. Reporta al usuario el resultado (levant�
 PASO 6 — MEMORIA DEL REPO (inventario + auditoría): si generaste con generate_from_spec, el inventario
   ya quedó registrado. Corre record_architecture(projectRoot, specPath, compliance, buildStatus, decisions)
   para escribir docs/audits/<module>-<fecha>.md con el resultado de build y verify. La misma llamada regenera desde el código el contrato (src/<modulo>/contracts) y el diagrama Mermaid (src/<modulo>/diagrams) del módulo.
-  DOCUMENTACIÓN OPCIONAL (pregunta al usuario, no la decidas tú): "¿Genero la colección de Postman?" y "¿Genero docs/ARCHITECTURE.md con el diagrama general (architecture-beta)?". Si dice que sí, llama generate_api_docs con postman=true y/o architecture=true; desde ahí el MCP las mantiene al día. Esto deja memoria del
+  DOCUMENTACIÓN: docs/ARCHITECTURE.md, el contrato y el diagrama de secuencia se generan siempre (no se preguntan). Postman es opcional (pregunta al usuario, no lo decidas tú): "¿Genero la colección de Postman?". Si dice que sí, llama generate_api_docs con postman=true; desde ahí el MCP la mantiene al día. Esto deja memoria del
   módulo para sesiones futuras.`
 
 export const REFACTOR_GUIDE = `Flujo REFACTOR del MCP midd-nestjs-hexagonal-architecture: tomar un proyecto NestJS existente (lógica plana) y convertirlo a arquitectura hexagonal del área, RESPETANDO las reglas del proyecto destino.

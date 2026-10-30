@@ -4,6 +4,7 @@ import { materializeTree } from './dataset.js'
 import { addEnvEntries } from './envFile.js'
 import { inspectProject } from './inspect.js'
 import { addImport, appendToArray } from './moduleMerge.js'
+import { configFile, configFileRel } from './projectFiles.js'
 import {
   PROFILES,
   connectionEnv,
@@ -17,7 +18,7 @@ import {
  * Database connections of a generated service.
  *
  * A connection is more than the TypeORM options: it needs its module, its options class, its block in
- * ConfigurationVariables, its variables in the Joi schema and in .env.example, its registration in
+ * the configuration variables, its variables in the Joi schema and in .env.example, its registration in
  * AppModule (imports + UtilsModule.register, which feeds the stored procedure service) and the driver
  * of its engine in package.json. `ensureConnection` creates ALL of it, once, for any engine, so the
  * first connection and every later one go through the same path and none is left half wired.
@@ -243,8 +244,8 @@ export function ensureConnection(opts: { projectRoot: string; conexion: string; 
   const warnings: string[] = []
   const patched: string[] = []
   const steps: Array<[string, PatchStatus, string]> = [
-    ['src/shared/infrastructure/config/ConfigurationVariables.ts', patchConfigurationVariables(join(projectRoot, 'src/shared/infrastructure/config/ConfigurationVariables.ts'), conexion), 'declare the database block of the connection'],
-    ['src/shared/infrastructure/config/joiSchema.ts', patchJoiSchema(join(projectRoot, 'src/shared/infrastructure/config/joiSchema.ts'), conexion, motor), 'validate its DB_* variables'],
+    [configFileRel(projectRoot, 'variables'), patchConfigurationVariables(configFile(projectRoot, 'variables'), conexion), 'declare the database block of the connection'],
+    [configFileRel(projectRoot, 'joi'), patchJoiSchema(configFile(projectRoot, 'joi'), conexion, motor), 'validate its DB_* variables'],
     ['.env.example', patchEnvExample(join(projectRoot, '.env.example'), conexion, motor), 'add its DB_* variables'],
     ['src/app.module.ts', patchAppModule(join(projectRoot, 'src/app.module.ts'), conexion, motor), 'import its module and add it to UtilsModule.register'],
     ['package.json', patchPackageJson(join(projectRoot, 'package.json'), motor), `add the ${PROFILES[motor].driver.name} driver to dependencies`]

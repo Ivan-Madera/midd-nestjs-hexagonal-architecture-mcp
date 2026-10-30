@@ -95,11 +95,11 @@ for (const motor of MOTORES) {
       assert.match(moduleFile, new RegExp(`export class ${profile.classPrefix}CatalogDatabaseModule`))
       assert.match(moduleFile, /name: 'CatalogConnection'/)
 
-      const config = read(root, 'src/shared/infrastructure/config/ConfigurationVariables.ts')
+      const config = read(root, 'src/shared/infrastructure/config/configuration-variables.ts')
       assert.match(config, /Catalog: \{[\s\S]*Server: process\.env\.DB_CATALOG_HOST,[\s\S]*Port: Number\(process\.env\.DB_CATALOG_PORT\)[\s\S]*DataBaseName: process\.env\.DB_CATALOG_NAME/)
       assert.doesNotMatch(config, /MSSQL_DATABASE|process\.env\.DATABASE_NAME/, 'no variable is tied to one engine')
 
-      const joi = read(root, 'src/shared/infrastructure/config/joiSchema.ts')
+      const joi = read(root, 'src/shared/infrastructure/config/joi-schema.ts')
       assert.match(joi, new RegExp(`DB_CATALOG_PORT: Joi\\.number\\(\\)\\.default\\(${profile.defaultPort}\\)`))
       for (const key of ['HOST', 'USERNAME', 'PASSWORD', 'NAME']) assert.match(joi, new RegExp(`DB_CATALOG_${key}: Joi\\.string\\(\\)\\.required\\(\\)`))
 
@@ -137,8 +137,11 @@ test('the engine is mandatory: scaffold_service without it, or with an unknown o
     await client.connect(transport)
     const tool = (await client.listTools()).tools.find((t) => t.name === 'scaffold_service')
     assert.deepEqual(tool.inputSchema.properties.motor.enum, ['mssql', 'postgres', 'mysql', 'none'], 'the three engines, or none = no database')
-    assert.ok(tool.inputSchema.required.includes('motor'), 'no default: the user is always asked')
+    assert.ok(!tool.inputSchema.required.includes('motor'), 'the tool checks it itself, with a message that says what to ask (the schema error was cryptic)')
+    assert.match(tool.description, /OBLIGATORIOS y SIEMPRE se le preguntan al usuario/)
 
+    // the first call on a repo without the kit only installs it (first contact); from the second one the checks apply
+    await client.callTool({ name: 'scaffold_service', arguments: { projectRoot: root } })
     const base = { projectRoot: root, conexion: 'Catalog', prefijoApi: 'svc', prefijoError: 'SVC' }
     for (const args of [base, { ...base, motor: 'oracle' }]) {
       const out = await client.callTool({ name: 'scaffold_service', arguments: args }).then((r) => r, (e) => e)
@@ -186,7 +189,7 @@ test('a second connection on ANOTHER engine is created complete, and the verifie
 
     for (const file of [
       'postgres.database.reporting.module.ts', 'options/reporting.postgres.option.ts',
-      'mysql.database.softCredito.module.ts', 'options/softCredito.mysql.option.ts'
+      'mysql.database.soft-credito.module.ts', 'options/soft-credito.mysql.option.ts'
     ]) assert.ok(existsSync(join(root, DB_CONTEXT, file)), `missing ${file}`)
 
     const app = read(root, 'src/app.module.ts')
@@ -195,7 +198,7 @@ test('a second connection on ANOTHER engine is created complete, and the verifie
       assert.match(app, new RegExp(`imports:[\\s\\S]*\\b${cls}\\b`), `${cls} must be in the imports array`)
     }
 
-    const config = read(root, 'src/shared/infrastructure/config/ConfigurationVariables.ts')
+    const config = read(root, 'src/shared/infrastructure/config/configuration-variables.ts')
     for (const name of ['Catalog', 'Reporting', 'SoftCredito']) assert.match(config, new RegExp(`${name}: \\{`))
     const env = read(root, '.env.example')
     for (const prefix of ['DB_CATALOG', 'DB_REPORTING', 'DB_SOFT_CREDITO']) assert.match(env, new RegExp(`^${prefix}_HOST=`, 'm'))
@@ -217,7 +220,7 @@ test('creating the same connection again changes nothing', async () => {
   const root = newRepo()
   try {
     await threeEngines(root)
-    const files = ['src/app.module.ts', 'package.json', '.env.example', 'src/shared/infrastructure/config/joiSchema.ts', 'src/shared/infrastructure/config/ConfigurationVariables.ts']
+    const files = ['src/app.module.ts', 'package.json', '.env.example', 'src/shared/infrastructure/config/joi-schema.ts', 'src/shared/infrastructure/config/configuration-variables.ts']
     const before = files.map((f) => read(root, f))
     const again = ensureConnection({ projectRoot: root, conexion: 'Reporting', motor: 'postgres' })
     assert.equal(again.status, 'exists')
@@ -348,11 +351,11 @@ test('TypeORM entities are loaded automatically, and the placeholders of the ent
       assert.match(options, /autoLoadEntities: true/, file)
       assert.doesNotMatch(options, /entities:\s*\[/, file)
     }
-    const infra = read(root, 'src/reports/infrastructure/infrastructure.reports.module.ts')
+    const infra = read(root, 'src/reports/infrastructure/reports.infrastructure.module.ts')
     assert.match(infra, /TypeOrmModule\.forFeature\(\[\w+EntityConfiguration\], 'ReportingConnection'\)/)
 
     // the entity still carries the table/column placeholders until someone fills them: it must say so with TODO
-    const entity = read(root, 'src/reports/infrastructure/sql-database/entities/Product.entity.ts')
+    const entity = read(root, 'src/reports/infrastructure/sql-database/entities/product.entity.ts')
     assert.match(entity, /TODO: replace '<nombre_tabla>'/)
   } finally {
     cleanup(root)
@@ -366,7 +369,7 @@ test('a stored procedure adapter injects the database service of its own connect
   const root = newRepo()
   try {
     await threeEngines(root)
-    const adapter = read(root, 'src/legacy/infrastructure/adapters/retrieveLegacy.sp.adapter.ts')
+    const adapter = read(root, 'src/legacy/infrastructure/adapters/retrieve-legacy.sp.adapter.ts')
     assert.match(adapter, /import \{ databaseServiceToken \} from/)
     assert.match(adapter, /@Inject\(databaseServiceToken\('SoftCredito'\)\)/)
     assert.doesNotMatch(adapter, /@Inject\(DATABASE_COMMON_PROCESS_SERVICES_ADAPTER\)/, 'the generic token is only the FIRST connection')
@@ -388,7 +391,7 @@ test('in a refactor the adapter keeps the token the project already has', async 
       adapterType: 'sp', nombreSp: 'GetLegacy', mode: 'refactor', infraStyle: 'project', infraRoot: 'common'
     })
     assert.notEqual(out.isError, true, out.content[0].text)
-    const adapter = read(root, 'src/legacy/infrastructure/adapters/retrieveLegacy.sp.adapter.ts')
+    const adapter = read(root, 'src/legacy/infrastructure/adapters/retrieve-legacy.sp.adapter.ts')
     assert.match(adapter, /import \{ DATABASE_COMMON_PROCESS_SERVICES_ADAPTER \} from '\.\.\/\.\.\/\.\.\/common\/utils\/utils\.module'/)
     assert.match(adapter, /@Inject\(DATABASE_COMMON_PROCESS_SERVICES_ADAPTER\)/)
     assert.equal(existsSync(join(root, DB_CONTEXT)), false, 'a refactor never gets a connection created: the project owns its own')
@@ -419,7 +422,7 @@ const MUTATIONS = [
   {
     name: 'a stored procedure adapter points at a connection that does not exist',
     change: (root) =>
-      edit(root, 'src/legacy/infrastructure/adapters/retrieveLegacy.sp.adapter.ts', (t) => t.replace("databaseServiceToken('SoftCredito')", "databaseServiceToken('Ghost')")),
+      edit(root, 'src/legacy/infrastructure/adapters/retrieve-legacy.sp.adapter.ts', (t) => t.replace("databaseServiceToken('SoftCredito')", "databaseServiceToken('Ghost')")),
     expect: (m) => /Ghost.*no database module declares/.test(m)
   },
   {
@@ -450,7 +453,7 @@ test('verify-standards requires every variable ConfigurationVariables reads to b
   const root = newRepo()
   try {
     await threeEngines(root)
-    edit(root, 'src/shared/infrastructure/config/joiSchema.ts', (t) => t.replace(/^\s*DB_REPORTING_HOST: .*\n/m, ''))
+    edit(root, 'src/shared/infrastructure/config/joi-schema.ts', (t) => t.replace(/^\s*DB_REPORTING_HOST: .*\n/m, ''))
     const { rules, messages } = verify(root)
     assert.ok(rules.includes('MISSING_ENV_VALIDATION'))
     assert.ok(messages.some((m) => m.includes('DB_REPORTING_HOST') && m.includes('not validated')), messages.join('\n'))
@@ -486,15 +489,15 @@ function transpile(relPath, rewrites = []) {
 
 const toolDir = mkdtempSync(join(tmpdir(), 'midd-sp-'))
 process.on('exit', () => rmSync(toolDir, { recursive: true, force: true }))
-writeFileSync(join(toolDir, 'spDialects.mjs'), transpile('shared/utils/services/spDialects.ts'), 'utf8')
+writeFileSync(join(toolDir, 'spDialects.mjs'), transpile('shared/utils/services/sp-dialects.ts'), 'utf8')
 const logged = []
 writeFileSync(join(toolDir, 'logger.mjs'), 'export default { error: (m) => globalThis.__spLog.push(["error", m]), debug: (m) => globalThis.__spLog.push(["debug", m]), info() {}, warn() {} }\n', 'utf8')
 globalThis.__spLog = logged
 writeFileSync(
   join(toolDir, 'databaseCommonService.mjs'),
-  transpile('shared/utils/services/databaseCommonService.ts', [
-    ["'./spDialects'", "'./spDialects.mjs'"],
-    ["'../../ErrorEventManagement/logger/Logger.service'", "'./logger.mjs'"]
+  transpile('shared/utils/services/database-common.service.ts', [
+    ["'./sp-dialects'", "'./spDialects.mjs'"],
+    ["'../../error-event-management/logger/logger.service'", "'./logger.mjs'"]
   ]),
   'utf8'
 )
