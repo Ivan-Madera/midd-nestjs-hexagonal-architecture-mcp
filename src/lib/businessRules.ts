@@ -28,10 +28,7 @@ export type GeneratedGuard = {
   snippet: string // el bloque de guarda a insertar (indentado)
 }
 
-const NOTA_AGENTE =
-  '// NOTA (agente/usuario): condición de regla de negocio GENERADA como aproximación\n' +
-  '  // a partir del texto del spec. REVÍSALA y ajústala al requerimiento real antes de\n' +
-  '  // dar el caso por terminado. El MCP no inventa reglas: solo materializa andamiaje.'
+const NOTA_AGENTE = '// TODO(midd): condiciones aproximadas desde el texto del spec; revisalas contra el requerimiento.'
 
 /** Normaliza para detección de patrones (minúsculas, sin acentos). */
 function norm(s: string): string {
@@ -115,7 +112,7 @@ export function buildGuard(rule: string, index: number, errorPrefix: string, num
       code: slug,
       inferred: true,
       snippet:
-        `// Unicidad de ${f}: añade un método al puerto que consulte por ${f} y descomenta.\n` +
+        `// TODO(midd): agrega al puerto la consulta por ${f} y descomenta.\n` +
         `    // const ${f}Existente = await this.servicio.buscarPor${cap(f)}(attributes.${f} as any)\n` +
         `    // if (${f}Existente) {\n` +
         `    //   throw new GenericException(\n` +
@@ -153,7 +150,7 @@ export function buildGuard(rule: string, index: number, errorPrefix: string, num
       code: slug,
       inferred: true,
       snippet:
-        `// Existencia de ${f}: MUEVE esta guarda tras obtener el resultado de la consulta.\n` +
+        `// TODO(midd): mueve esta guarda despues de obtener el resultado y descomentala.\n` +
         `    // if (!result) {\n` +
         `    //   throw new GenericException(\n` +
         `    //     \`No se encontró ${f} para los parámetros enviados.\`,\n` +
@@ -170,9 +167,9 @@ export function buildGuard(rule: string, index: number, errorPrefix: string, num
       code: slug,
       inferred: true,
       snippet:
-        `// Branching por ${field}: bifurca el comportamiento según su valor.\n` +
-        `    if (attributes.${field} === /* TODO: valor esperado */ undefined) {\n` +
-        `      // TODO: comportamiento de esta variante\n` +
+        `// TODO(midd): pon el valor esperado y el comportamiento de esta variante.\n` +
+        `    if (attributes.${field} === undefined) {\n` +
+        `      // comportamiento de esta variante\n` +
         `    }`
     }
   }
@@ -183,7 +180,7 @@ export function buildGuard(rule: string, index: number, errorPrefix: string, num
     code: slug,
     inferred: false,
     snippet:
-      `// TODO: implementa la condición de esta regla.\n` +
+      `// TODO(midd): implementa la condicion de esta regla.\n` +
       `    // if (/* condición de: ${rule} */ false) {\n` +
       `    //   throw new GenericException(\n` +
       `    //     '${escapeStr(rule)}',\n` +
@@ -250,7 +247,6 @@ export function applyBusinessRules(opts: {
       .map(
         (g) =>
           `    // Regla: ${g.rule}\n` +
-          `    // (condición ${g.inferred ? 'inferida' : 'NO inferida — completa manualmente'})\n` +
           `    ${g.snippet}\n`
       )
       .join('\n')

@@ -65,6 +65,10 @@ criterio (preguntas, spec, decisiones) y orquestas un worker y un auditor tras b
 4. **No uses el MCP para otra cosa** que lo que el usuario pidio. Responde en el idioma del usuario.
 5. Nunca agregues `axios` (usa `fetch` nativo) ni `uuid` (usa `randomUUID` de `node:crypto`). Estan prohibidos.
 6. Nunca desactives ni debilites una regla de seguridad para que el verificador pase: corrige el codigo.
+   **Comentarios en el codigo que generas o editas:** solo el porque no obvio, en una linea; nunca narres cambios ni repitas el codigo.
+   Un pendiente es una linea `// TODO(midd): <que falta>`, que se borra al resolverlo.
+   **Comentarios en el codigo que generas o editas:** solo el porque no obvio, en una linea; nunca narres cambios ni repitas el codigo.
+   Un pendiente es una linea `// TODO(midd): <que falta>`, que se borra al resolverlo.
 7. **Los nombres van en INGLES.** Modulo, entidad, casos de uso, metodos, entidades request/response, accion y `resource_type` se escriben
    en ingles (`StoreConfiguration`, `RetrieveExchangeRate`), aunque el usuario hable en espanol: traduces tu y SIEMPRE muestras los
    nombres en el plan para que el usuario los confirme o los cambie. Los textos de error y de negocio si van en espanol. El modulo va
@@ -124,6 +128,19 @@ Nunca las juntes en una lista. Despues de cada respuesta clara, guardala (ver ab
 📬 Genero la coleccion de Postman? (si/no)
 ```
 Cada bloque es un mensaje distinto (el numero cuenta solo las que realmente haces: salta las que AGENTS.md ya tenga respondidas).
+
+**Respuestas sugeridas (refactor, o cualquier proyecto con codigo).** `inspect_project` devuelve "Respuestas sugeridas", calculadas por el
+MCP leyendo el proyecto, cada una con su evidencia. Si una pregunta tiene sugerencia, la pregunta va igual (una por mensaje), pero con la
+sugerencia lista para confirmar:
+```
+🧱 **Middleware Generator pregunta** (1 de 5)
+🔖 Prefijo de la API (kebab-case). Los endpoints quedaran como /<prefijo>/api/v1/{recurso}.
+💡 Sugerencia leida del proyecto: midd-pf-initial (evidencia: package.json: name). ¿La confirmo o prefieres otro?
+```
+- Usa SOLO las sugerencias que trae `inspect_project`, con su evidencia tal cual. No inventes otras ni "mejores" valores tu.
+- Nunca la apliques sin confirmacion: un "si" / "ok" del usuario la confirma; si da otro valor, manda el suyo.
+- Sin sugerencia ("sin evidencia"), pregunta normal, sin proponer valor. En autorizacion, la falta de evidencia NO es un "no".
+- Si la sugerencia dice que el proyecto usa varios motores o que el nombre no empieza con `midd-`, dilo al preguntar.
 Antes de preguntar, en una linea, resume lo ya respondido ("Prefijo de la API: midd-prueba"). `docs/ARCHITECTURE.md` no se pregunta: el MCP lo genera siempre, desde el codigo.
 Detalle de cada punto:
 - `prefijoApi`: preguntalo como "prefijo de la API", no como prefijo del servicio.
@@ -150,11 +167,31 @@ Detalle de cada punto:
 - CORS no se pregunta: `CORS_ALLOWED_ORIGINS` vale `*` por defecto y se cambia despues por variable de entorno.
 - **Lo que ya se sabe no se pregunta**: si `get_learnings`, `inspect_project` o el inventario ya dicen el prefijo, los prefijos de error
   usados o la conexion, proponlos y confirma en una linea. No repitas un prefijo de error que ya usa otro modulo.
-- **Refactor**: el proyecto ya tiene su conexion. No preguntes los puntos 1 a 3: tomalos del proyecto; deja `connection.name` y
+- **Refactor**: el proyecto ya tiene su conexion. Las 5 preguntas se hacen igual, una por mensaje, con la sugerencia que trae
+  `inspect_project` para que el usuario solo confirme; sin sugerencia, se preguntan sin proponer valor, nunca se inventan; deja `connection.name` y
   `connection.engine` fuera del spec y el MCP la detecta y la reutiliza (no crea nada). Solo si el proyecto tiene varias conexiones
   nombradas, pregunta cual usa cada caso. Si no tiene ninguna, el MCP NO la genera: solo si el usuario pide expresamente una,
   pregunta el motor y usa `crearConexion=true` (o `connection.create: true` en el spec) junto con el motor. Sin ese pedido expreso
   nunca pases el motor ni crees nada.
+### Refactor - reglas que no se negocian
+En un refactor el proyecto es del usuario. Estas reglas evitan los errores de un refactor real (seguridad escrita a mano, nombres y
+valores inventados, codigo borrado):
+1. **La capa obligatoria viene del MCP**: llama `adopt_shared_layer` antes de migrar casos. Nunca escribas a mano la seguridad (rate limit,
+   concurrencia, payload), el correlation id, la configuracion, el Joi, las variables `RL_*` ni los codigos de error del borde: la herramienta
+   los trae con sus nombres y valores del area. `main.ts` y `app.module.ts`: muestrale al usuario los cambios que lista la herramienta y,
+   solo si acepta, vuelve a llamarla con `patchEntry=true`.
+2. **Rutas**: 🧱 **Middleware Generator pregunta** - muestra la tabla `ruta actual -> ruta nueva` (con el verbo) y marca que es un cambio
+   incompatible para quien consume el servicio. Espera la decision. Nunca digas que las rutas se mantuvieron si cambiaron.
+3. **Estructura del estandar**: infra en `src/shared` (con `infraStyle="dataset"`), cada entidad TypeORM en su modulo
+   (`src/<modulo>/infrastructure/sql-database/entities/`). Nada de carpetas propias como `src/common`, `src/config`, `src/entities`.
+4. **Integraciones externas** (SAP, otras APIs): un caso con `adapterType="http"`. Nunca `fetch` suelto en un service.
+5. **No borres nada sin permiso**: ni el modulo legacy ni los tests. Primero los casos migrados compilan y `verify_standards` queda limpio; luego
+   propones la lista de lo que se borraria y lo borras solo si el usuario acepta.
+6. **El verificador manda**: un error o aviso NUNCA es un "falso positivo" ni "cache del MCP". Corrigelo o preguntale al usuario. Reporta los
+   avisos (WARN), no solo los errores.
+7. **Lo decidido se hace**: si `AGENTS.md` dice `AUTHORIZATION: required`, corre `add_authorization`.
+8. **Cierre honesto**: no digas "listo para produccion" sin arrancar el servicio, probar el health y correr los tests. Usa la fecha real del
+   sistema en los reportes.
 ### Fase 3 - Casos de uso, UNO por UNO (lo que hace cada caso lo sabe el usuario caso por caso)
 El servicio NO esta terminado con la base: **no cierres la conversacion tras `scaffold_service`** ni digas "sin pendientes" ni "dime que modulo
 quieres". Un servicio sin casos de uso no sirve. Termina la Fase 2 y pide SIEMPRE el primer caso de uso (abajo). Si la base ya se genero (el MCP
@@ -225,7 +262,8 @@ entidad es otro modulo (otro spec).
 ### Fase 6 - Generar (determinista, lo haces tu)
 1. Llama `get_flow` con `flow` = `greenfield` o `refactor` y sigue esa guia para los pasos de preparacion.
    Esa guia es la unica fuente del procedimiento (no la copies). Como el spec ya contesta sus preguntas, no las repitas.
-2. Greenfield: `scaffold_service`. Luego `generate_from_spec` con `dryRun=false` (no uses un caso de ejemplo).
+2. Greenfield: `scaffold_service`. Refactor: `adopt_shared_layer` (nunca `scaffold_service`; ver "Refactor - reglas que no se negocian").
+   Luego `generate_from_spec` con `dryRun=false` (no uses un caso de ejemplo).
 3. Si el usuario pidio autorizacion, llama `add_authorization` con una URL de ejemplo (`https://auth.example.com`): la URL real
    se pide y se escribe en el `.env` en la Fase 6b.
    Si dijo si a Postman, llama `generate_api_docs` con `postman=true` (una vez; desde ahi el MCP lo mantiene al dia en cada `add_use_case`,

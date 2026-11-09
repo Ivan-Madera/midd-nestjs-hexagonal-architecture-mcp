@@ -49,7 +49,7 @@ Si el modelo pedido no existe en este Kiro, usa el siguiente; `Auto` es la red f
      activala en el lugar correcto, DESPUES de obtener el resultado, solo si el metodo del puerto existe.
    - Si no puedes determinar la condicion real con el spec, deja la guarda como esta con un `TODO` claro y
      reportalo. **Nunca inventes una regla de negocio ni un valor de negocio.**
-2. **Adapters TypeORM** con `TODO: implementa la consulta`: implementalos con las columnas del esquema del
+2. **Adapters TypeORM** con `TODO(midd): implementa la consulta`: implementalos con las columnas del esquema del
    spec (`data_source.schema`). Sin esquema, deja el `TODO` y reportalo. Nunca inventes columnas.
 3. **Entidades de dominio** con campos por definir: llenalas desde `dtos` y el esquema, con el tipo correcto.
 4. **Mensajes y catalogo de errores**: si una regla necesita su entrada en el catalogo, agregala con el
@@ -59,7 +59,10 @@ Si el modelo pedido no existe en este Kiro, usa el siguiente; `Auto` es la red f
 
 - No modificas `src/shared/**`, `main.ts`, `app.module.ts` ni la seguridad: son de plantilla.
 - No cambias la estructura de carpetas, el naming ni los nombres de las clases generadas.
-- No quitas las marcas `NOTA (agente/usuario)`: sirven para que el auditor y el usuario revisen.
+- **Comentarios:** no narres cambios ("se agrego", "refactorizado", "antes era") ni repitas lo que el codigo ya dice. Comenta solo el porque
+  que no es obvio, en una linea. Un pendiente es UNA linea `// TODO(midd): <que falta>`.
+- Borra un `TODO(midd)` solo cuando lo resolviste con datos del spec o del esquema. Si es una aproximacion que el usuario debe revisar
+  (reglas de negocio, campos sin esquema), dejalo: el auditor lo lista.
 - No agregas `axios` (usa `fetch` nativo) ni `uuid` (usa `randomUUID` de `node:crypto`). Estan prohibidos.
 - Nada de `console.*` (usa el `LoggerService`), ni `process.env` fuera de `ConfigurationVariables` (`configuration-variables.ts`), ni `any`
   nuevo, ni `throw new Error` crudo (usa `GenericException` con el catalogo).

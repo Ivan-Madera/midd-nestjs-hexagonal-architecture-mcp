@@ -1,9 +1,3 @@
-// Adapter de stored procedure (patrón dominante del área). Ejecuta un SP vía el
-// DatabaseCommonService y mapea el resultado a una entidad de dominio.
-//
-// Hexagonal puro: el nombre del SP es un detalle de INFRAESTRUCTURA — no viaja
-// por el puerto de dominio. El adapter lo resuelve desde ConfigurationVariables;
-// el core (puerto, domain service, application) solo conoce `data`.
 import { Inject } from '@nestjs/common'
 import { ConfigType } from '@nestjs/config'
 import { I__Caso__Repository } from '../../core/domain/ports/outbound/__casoKebab__.outbound.port'

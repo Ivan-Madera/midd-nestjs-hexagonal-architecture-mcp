@@ -55,7 +55,7 @@ El MCP es un proceso Node (ESM) que registra herramientas y prompts contra el `M
 
 | Capa | Carpeta | Responsabilidad |
 |------|---------|-----------------|
-| **Entrypoint** | `src/index.ts` | Arranca el servidor, registra las 15 tools y los 3 prompts, conecta el transporte stdio. |
+| **Entrypoint** | `src/index.ts` | Arranca el servidor, registra las 16 tools y los 3 prompts, conecta el transporte stdio. |
 | **Tools** | `src/tools/` | Cada herramienta MCP: valida inputs (zod), orquesta la lib y devuelve un reporte de texto. |
 | **Lib (núcleo)** | `src/lib/` | Lógica pura: sustitución de placeholders, materialización de plantillas, parcheo idempotente de módulos, parser de spec, inferencia de reglas, inventario. |
 | **Dataset** | `templates/` | Las plantillas (capa `shared`, config, `_domain-slice`), `rules.yaml` y el template del spec. Se empaqueta con el servidor. |
@@ -64,7 +64,7 @@ El MCP es un proceso Node (ESM) que registra herramientas y prompts contra el `M
 
 ```
 src/
-├── index.ts                 # servidor MCP: registra 15 tools + 3 prompts (stdio); envuelve con withKit las que trabajan sobre un repo
+├── index.ts                 # servidor MCP: registra 16 tools + 3 prompts (stdio); envuelve con withKit las que trabajan sobre un repo
 ├── prompts.ts               # flujos guía: start, scaffold_greenfield, refactor_to_hexagonal
 ├── lib/
 │   ├── dataset.ts           # localiza/lee plantillas y materializa árboles en el destino
@@ -91,6 +91,7 @@ src/
 │   └── schemas.ts           # inputs zod compartidos
 └── tools/
     ├── scaffold.ts          # scaffold_service
+    ├── adoptShared.ts       # adopt_shared_layer (refactor: capa compartida obligatoria sin pisar nada)
     ├── addUseCase.ts        # add_use_case (vertical slice; greenfield y refactor)
     ├── generateFromSpec.ts  # generate_from_spec (un módulo desde el spec)
     ├── addAuthorization.ts  # add_authorization
@@ -124,7 +125,7 @@ test/                                # suite con el runner nativo de Node (node:
 flowchart TD
   Agent["Agente / IDE (Kiro, Claude, Cursor)"] -->|stdio / MCP| Server["McpServer (src/index.ts)"]
   Server --> Prompts["Prompts: start · greenfield · refactor"]
-  Server --> Tools["15 Tools"]
+  Server --> Tools["16 Tools"]
   Tools --> Lib["lib/ (núcleo puro)"]
   Lib --> Dataset["templates/ (plantillas + rules.yaml)"]
   Lib -->|escribe disco| Target["Proyecto NestJS destino (src/, docs/)"]
@@ -152,7 +153,12 @@ sequenceDiagram
   Ag->>MCP: inspect_project(projectRoot)
   MCP->>Repo: lectura (convención, conexión, infra existente)
   MCP-->>Ag: reglas a respetar + nombres de clase a reusar
-  Ag->>MCP: add_use_case(mode="refactor", ...)
+  Ag->>MCP: adopt_shared_layer(projectRoot, prefijoApi)
+  MCP->>Repo: escribe en src/shared solo lo que falta (no pisa nada)
+  MCP-->>Ag: cambios pendientes de main.ts / app.module.ts, rutas, dependencias prohibidas
+  Ag->>Ag: pregunta al usuario (rutas, tocar main.ts / app.module.ts)
+  Ag->>MCP: adopt_shared_layer(patchEntry=true) si el usuario acepta
+  Ag->>MCP: add_use_case(mode="refactor", infraStyle="dataset", ...)
   MCP->>Repo: genera slice (NO toca app.module)
   Ag->>Repo: mueve la lógica real + reusa infra existente
   Ag->>MCP: verify_standards + record_architecture
@@ -181,6 +187,13 @@ flowchart LR
 - **Motor de base de datos:** el agente lo pregunta (`mssql`, `postgres`, `mysql`) y de la respuesta salen el driver, las opciones de TypeORM y el dialecto del stored procedure (mssql `EXEC`, mysql `CALL`; **el área no usa stored procedures en PostgreSQL**, el MCP los rechaza). Con `none` (el servicio no usa base de datos) no se genera ninguna conexión, módulo, variable `DB_*` ni driver.
 - **Conexiones:** su nombre no se pregunta, sale del motor (`Mssql`, `Postgres`, `Mysql`); una adicional del mismo motor se numera (`Mssql2`, variables `DB_MSSQL2_*`).
 
+### Refactor: la capa compartida (`adopt_shared_layer`)
+- Un refactor no corre `scaffold_service` (reemplazaría `main.ts`, `app.module.ts` y `package.json`), pero necesita la misma capa obligatoria. `adopt_shared_layer` la trae a `src/shared` **sin pisar nada**: escribe solo los archivos que faltan, agrega a `package.json` y `.env.example` solo lo que falta (con los nombres y defaults del área) y reporta la infra propia del proyecto, las dependencias prohibidas y lo que se debe decidir.
+- `main.ts` y `app.module.ts` son del proyecto: solo se tocan con `patchEntry=true`, que el agente pasa **después de que el usuario aceptó**. Se insertan las piezas que faltan del borde (Cache-Control primero, correlation id, payload, helmet, Permissions-Policy, CORS, filtro de errores; `GlobalSettingModule`, `UtilsModule`, `SecurityModule`, `HealthModule`). Nada se borra ni se duplica.
+- No toca las rutas ni el content type: cambiarlos rompe a quien consume el servicio, así que el agente muestra la tabla ruta actual → ruta nueva y pregunta. Si el proyecto ya carga su propia configuración, no agrega un segundo `ConfigModule.forRoot`: dice qué fusionar.
+- La conexión por defecto de un proyecto (`TypeOrmModule.forRoot` sin nombre) se registra como `UtilsModule.register(['Default'])`, así los stored procedures tienen su servicio de base de datos.
+- Los casos migrados usan `infraStyle="dataset"` (imports a `src/shared`); `infraRoot` por defecto ya es `shared`, nunca una carpeta inventada.
+
 ### Vertical slice (greenfield y refactor)
 - `add_use_case` genera un caso completo: **puertos inbound/outbound**, domain/application services, adapter, controller JSON:API + DTOs, entidades de dominio, catálogos de error y los módulos del dominio.
 - **Tres adapters:** `typeorm` (por defecto), `sp` (stored procedure, opt-in; no con PostgreSQL) y `http` (**API externa** con el `fetch` nativo; no necesita base de datos ni conexión). El adapter `http` declara `<API>_BASE_URL` en la configuración, en Joi y en el `.env.example`, y traduce las respuestas (404 = no encontrado; error o API caída = 502 `EXTERNAL_API_ERROR`).
@@ -205,13 +218,14 @@ flowchart LR
 - `generate_api_docs` lee el código y escribe el contrato por módulo, un diagrama Mermaid de secuencia por módulo y el índice; `docs/ARCHITECTURE.md` (`architecture-beta`, siempre, no se pregunta) y, opcionalmente, la colección de Postman. Se mantiene al día en cada generación.
 
 ### Verificación y descubrimiento
-- `verify_standards` corre el verificador del servicio generado con **reglas de ID estable**: naming, seguridad HTTP, correlation ID, `@Version`, `.env.example` y defaults de Joi, autorización, health, conexiones de BD, SP declarado, reglas de código (sin `console.log`, `process.env` directo, `any`, dinero como float, HTTP en el core...), dependencias prohibidas, documentación desactualizada, códigos de error repetidos y `.env` sin ignorar por git.
+- `verify_standards` corre el verificador del servicio generado con **reglas de ID estable**: naming, seguridad HTTP, correlation ID, `@Version`, `.env.example` y defaults de Joi, autorización, health, conexiones de BD, SP declarado, reglas de código (sin `console.log`, `process.env` directo, `any`, dinero como float, HTTP en el core...), dependencias prohibidas, documentación desactualizada, códigos de error repetidos y `.env` sin ignorar por git. También revisa la **estructura** (sobre todo en refactor): piezas obligatorias fuera de `src/shared/infrastructure` (`SHARED_LAYOUT`), entidades TypeORM fuera de su módulo (`ORM_ENTITY_OUTSIDE_MODULE`), códigos 429/413 inventados (`EDGE_ERROR_CODE`), un segundo limitador como `@nestjs/throttler` (`PARALLEL_SECURITY_DEPENDENCY`), todos avisos; y como error, el correlation id reusado sin validar (`CORRELATION_ID_UNVALIDATED`) y `AUTHORIZATION: required` en `AGENTS.md` sin módulo de autorización (`AUTHORIZATION_DECIDED_NOT_INSTALLED`). Un servicio nuevo no dispara ninguna.
 - `inspect_project`: descubrimiento de **solo lectura** del proyecto destino (convención de carpetas, forma de la conexión TypeORM, infra transversal a reusar con sus **nombres de clase**, nombre que tomaría una conexión nueva).
 
 ### Cuántas preguntas hace el agente
 En una API nueva, tres momentos:
 1. **Cinco preguntas generales, de una en una:** prefijo de la API, prefijo de errores, base de datos (mssql, postgres, mysql o none), autorización y Postman. Cada una va en su propio mensaje (`🧱 Middleware Generator pregunta (1 de 5)`), el agente espera la respuesta y la guarda antes de pasar a la siguiente (autorización y Postman en `AGENTS.md`); salta las que ya estén respondidas. Las preguntas del agente llevan emojis para distinguirlo del agente por defecto.
    Tras generar la base **no se detiene**: pide el primer caso de uso.
+   En un **refactor** cada pregunta llega con una **sugerencia leída del proyecto** y su evidencia (`💡 Sugerencia leída del proyecto: midd-pf-initial (evidencia: package.json: name)`), para que solo confirmes. Las calcula `inspect_project` de forma determinista: prefijo de la API (`API_CONTEXT` de `.env.example`/`.env`, nombre del paquete o de la carpeta), prefijo de errores (el que ya usan los códigos del proyecto, o derivado del prefijo de la API), base de datos (el `type` de TypeORM o el driver), autorización (passport/jwt, guards o la cabecera `Authorization`) y Postman (una colección existente). Sin evidencia no hay sugerencia; de `.env` solo se lee `API_CONTEXT`.
 2. **Por caso de uso:** "qué hace, qué recibe y qué devuelve". De ahí el agente deduce si los datos salen de la base de datos, de una API externa o de un stored procedure, y solo pregunta el dato que falta de ese caso (nombre, verbo y ruta de la API; nombre del SP). Con "ninguna" base de datos, todos los casos son de API externa.
 3. **Los valores reales del entorno** (host, usuario, URLs), al preparar el servicio.
 
@@ -274,7 +288,7 @@ Solo las herramientas de lectura van en `autoApprove`; las que escriben archivos
 
 ### Instalación automática de los agentes
 
-No hace falta pedir `install_agentic_kit`. La primera herramienta que trabaja sobre un repo (`scaffold_service`, `add_use_case`, `generate_from_spec`, `add_authorization`, `inspect_project`) revisa si el kit está y, si no, lo instala antes de seguir:
+No hace falta pedir `install_agentic_kit`. La primera herramienta que trabaja sobre un repo (`scaffold_service`, `adopt_shared_layer`, `add_use_case`, `generate_from_spec`, `add_authorization`, `inspect_project`) revisa si el kit está y, si no, lo instala antes de seguir:
 
 | Situación del repo | Qué hace el MCP |
 |---|---|
@@ -376,6 +390,12 @@ Genera la base de un servicio NestJS hexagonal nuevo.
 - **Input:** `projectRoot`, `conexion?` (opcional: por defecto el nombre del motor), `motor` (`mssql`\|`postgres`\|`mysql`\|`none`, obligatorio: el agente lo pregunta; `none` = sin base de datos, no se genera ninguna conexión), `prefijoApi` (kebab-case), `prefijoError` (MAYÚSCULAS), `overwrite?`. Los tres obligatorios (`prefijoApi`, `prefijoError`, `motor`) los valida la herramienta, no el esquema: si falta alguno **no genera nada** y responde con la lista de lo que hay que preguntarle al usuario.
 - **Escribe:** `src/shared/**`, config/enforcement, `main.ts`, `app.module.ts`, `.env.example`.
 
+### `adopt_shared_layer`
+Refactor: trae la capa compartida obligatoria a un proyecto NestJS existente, sin pisar nada.
+- **Input:** `projectRoot`, `prefijoApi?` (para `API_CONTEXT` en `.env.example`), `patchEntry?` (default `false`; `true` solo con el visto bueno del usuario).
+- **Escribe:** lo que falta de `src/shared/**`, `scripts/verify-standards.mjs` si no existe, dependencias y variables faltantes. Con `patchEntry=true`, inserciones en `src/main.ts` y `src/app.module.ts`.
+- **Nunca:** pisa un archivo, cambia una versión, quita dependencias, cambia rutas ni borra código. Lo que requiere decisión lo reporta.
+
 ### `add_use_case`
 Genera un caso de uso completo (vertical slice).
 - **Input:** `projectRoot`, `dominio`, `caso`, `entidad`, `metodo`, `param`, `request?`, `accion`, `prefijoError`, `conexion?` (opcional), `crearConexion?` (solo refactor, si el usuario la pidió expresamente), `motor?` (obligatorio solo si la conexión es nueva), `adapterType` (`typeorm`\|`sp`\|`http`), `nombreSp?`, `apiExterna?`, `rutaApi?`, `metodoHttp?`, `envVarSp?`, `mode` (`greenfield`|`refactor`), `connectionStyle` (`named`|`default`), `infraStyle` (`dataset`|`project`), `infraRoot?`, `overwrite?`
@@ -433,6 +453,7 @@ Agnóstico de dominio: `module`, `entity` y `use_cases` los define el usuario. U
 - **`portMethods.ts`** — añade N métodos tipados a puertos/domain service/adapter y crea las entidades `*.entity.ts` faltantes.
 - **`httpWiring.ts`** — wiring del adapter de API externa: apunta los módulos al `.http.adapter`, declara `<API>_BASE_URL` (config + Joi `.uri().required()` + `.env.example`) y la entrada `EXTERNAL_API_ERROR` del catálogo.
 - **`caseErrors.ts` / `errorCodes.ts`** — un caso nuevo en un dominio existente agrega sus entradas a los catálogos de error, y cada código toma el siguiente número libre del prefijo.
+- **Comentarios del código generado:** solo el porqué no obvio; cada pendiente es una línea `// TODO(midd): <qué falta>` que el auditor lista y que se borra al resolverlo.
 - **`businessRules.ts`** — materializa reglas como guardas con `GenericException`; infiere la condición por patrón (obligatorio, enum, unicidad, 404, branching) y estampa una **NOTA** de que es una aproximación a revisar.
 
 ### Convención de nombres
@@ -468,6 +489,8 @@ npm run test:e2e # genera, instala, compila y arranca un servicio real (necesita
 | `test/httpAdapter.test.mjs` | Adapter de API externa: cableado sin base de datos, verbos GET/POST/PUT, config/Joi/.env, mezcla con TypeORM, spec, refactor, documentación. |
 | `test/errorCodes.test.mjs` | Códigos `PREFIJO-SLUG-NNN`: secuencia por prefijo, 001-999, agotamiento, capa compartida de 3 dígitos y reglas del verificador. |
 | `test/envFile.test.mjs`, `test/environment.test.mjs` | `.env.example` por secciones y defaults de Joi; pasos dirigidos al agente, `.gitignore` y `ENV_NOT_IGNORED`. |
+| `test/suggestions.test.mjs` | Respuestas sugeridas en refactor: una por pregunta con su evidencia, prioridad de las fuentes, sin sugerencia cuando no hay evidencia y sin leer secretos de `.env`. |
+| `test/refactorAdopt.test.mjs` | Refactor: `adopt_shared_layer` sin y con `patchEntry` (no pisa nada, idempotente, no duplica `ConfigModule`, el verificador queda sin hallazgos de seguridad), `infraRoot` por defecto `shared`, conexión por defecto en `UtilsModule` y las reglas de estructura del verificador (un servicio nuevo no dispara ninguna). |
 | `test/naming.test.mjs` | Convención de nombres: helpers, módulo de varias palabras (identificadores válidos, archivos kebab-case, verificador limpio), merge de un segundo caso, `resource_type`, rechazo de un dominio con la estructura anterior y aviso `NAMING_FILE_CASE`. |
 | `test/mapping.test.mjs` | Mapeo como el canon: propiedades camelCase, `@Expose` con el nombre de la columna (SP) o simple (TypeORM), `@Column` en la entidad TypeORM, `Mapper` en el adapter y aviso `BLIND_CAST` ante `as unknown as`. |
 | `test/apiDocs.test.mjs` | Documentación generada desde el código: contrato, diagrama, fusión de Postman, `architecture-beta`, refresco automático y avisos del verificador. |

@@ -5,10 +5,6 @@ import { I__Caso__Service } from './domain/ports/inbound/__casoKebab__.inbound.p
 import { __Caso__DomainService } from './domain/services/__casoKebab__.domain.service'
 import { __Caso__ApplicationService } from './application/services/__casoKebab__.application'
 
-/**
- * Tokens de inyección (string) del dominio <Dominio>. Exporta los tokens de
- * aplicación que otros dominios vayan a consumir.
- */
 export const __CASO___APPLICATION = '__CASO___APPLICATION'
 export const __CASO___SERVICE_PORT_INBOUND = '__CASO___SERVICE_PORT_INBOUND'
 
@@ -30,8 +26,6 @@ export class __Dominio__CoreModule {
       useFactory(service: I__Caso__Service) {
         return new __Caso__ApplicationService(service)
       },
-      // Si el caso necesita config (branching), añade ConfigurationVariables.KEY
-      // aquí y al constructor: useFactory(service, config) {...} inject: [..., ConfigurationVariables.KEY]
       inject: [__CASO___SERVICE_PORT_INBOUND]
     }
 

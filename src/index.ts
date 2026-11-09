@@ -27,6 +27,7 @@ import {
   getRules,
   getRulesSchema
 } from './tools/support.js'
+import { adoptSharedLayer, adoptSharedLayerSchema } from './tools/adoptShared.js'
 import { registerPrompts } from './prompts.js'
 import { withKit } from './tools/kit.js'
 
@@ -46,13 +47,21 @@ server.tool(
   withKit({ creates: true, entry: true, gate: true }, scaffoldService)
 )
 
+// --- Refactor: la capa compartida del estandar en un proyecto existente -----
+server.tool(
+  'adopt_shared_layer',
+  'REFACTOR. Trae a un proyecto NestJS EXISTENTE la capa compartida obligatoria del area (seguridad: rate limit C1/C2/C3, Cache-Control, helmet, CORS; correlation id; configuracion tipada + Joi con los defaults del area; filtro de errores JSON:API; health; utils con HttpClientService y DatabaseCommonService) en src/shared, sin pisar nada: escribe solo los archivos que faltan, agrega a package.json y .env.example solo lo que falta y reporta la infra propia del proyecto, las dependencias prohibidas y las decisiones pendientes (rutas, content type). main.ts y app.module.ts son del proyecto: solo los toca con patchEntry=true, que el agente pasa DESPUES de que el usuario acepto; si no, devuelve los cambios exactos. Usala en el refactor en vez de scaffold_service y en vez de escribir la seguridad a mano.',
+  adoptSharedLayerSchema,
+  withKit({ entry: true, gate: true }, adoptSharedLayer)
+)
+
 // --- Vertical slice completa ------------------------------------------------
 server.tool(
   'add_use_case',
   'Genera un caso de uso completo (vertical slice hexagonal) en un dominio: puerto inbound/outbound, domain service, application service + interface + spec, adapter (TypeORM por defecto; SP opt-in con nombreSp), controller JSON:API + DTOs, entidad de dominio y TypeORM, catálogos de error, y los módulos del dominio. Escribe en src/<dominio>/ (carpeta siempre lowercase; las clases salen en PascalCase sin importar el case de "dominio"). ' +
     'MULTI-CASO: al añadir el 2º/3er caso al MISMO dominio, el MCP MERGEA ese caso en los módulos del dominio ya generados (controller, adapter, providers, tokens, forFeature) — tanto en greenfield como en refactor. En refactor NUNCA toca app.module (eso lo cablea el agente). ' +
     'API EXTERNA: con adapterType="http" (apiExterna, rutaApi, metodoHttp) el caso consume una API con el fetch nativo y NO necesita base de datos, conexion ni motor; declara <API>_BASE_URL en config, Joi y .env.example. SP: con adapterType="sp" el wiring es quirúrgico — apunta el módulo al .sp.adapter y quita del forFeature SOLO la entidad de ese caso, preservando las de los casos TypeORM. ' +
-    'INFRA (refactor): usa infraStyle="project" + infraRoot (p.ej. "common") para que los imports de infra apunten a la carpeta del proyecto; aun así, concilia a mano los NOMBRES de clase (ResponseJsonApiBase/GenericException de los templates vs los del proyecto).',
+    'INFRA (refactor): primero adopt_shared_layer deja la capa shared del estandar en src/shared; con ella usa infraStyle="dataset". Solo si el proyecto conserva su propia infra en otra carpeta (la que reporta inspect_project), usa infraStyle="project" + ese infraRoot y concilia a mano los NOMBRES de clase.',
   addUseCaseSchema,
   withKit({ gate: true }, addUseCase)
 )

@@ -1,11 +1,7 @@
 import Joi from 'joi'
 
 /**
- * Environment variables validation schema. ALL the variables the service
- * consumes must be declared here. Keep it in sync with ConfigurationVariables.ts
- * and .env.example.
- *
- * Canonical base: extend it with the service specific variables.
+ * Every variable the service reads is validated here (fail fast at boot), in sync with .env.example.
  */
 export const configValidationSchema = Joi.object({
   // Server
@@ -13,12 +9,9 @@ export const configValidationSchema = Joi.object({
   // {context} of the base URL /{context}/api/v{N}/{resource}. Routes break without it.
   API_CONTEXT: Joi.string().required(),
 
-  // Database connections: one block of DB_<CONNECTION>_* variables per connection,
-  // added by scaffold_service and add_use_case.
+  // Database connections: one block of DB_<CONNECTION>_* per connection.
 
-  // HTTP security (mandatory baseline). Comma separated list of allowed origins.
-  // Defaults to '*' (any origin, tolerated for server-to-server middleware); set
-  // concrete origins in the env var once they are defined.
+  // HTTP security (mandatory). CORS: comma separated origins; '*' by default.
   CORS_ALLOWED_ORIGINS: Joi.string().default('*'),
   RL_MAX_REQUESTS_PER_WINDOW: Joi.number().default(150),
   RL_WINDOW_SECONDS: Joi.number().default(5),

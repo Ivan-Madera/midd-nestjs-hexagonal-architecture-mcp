@@ -8,10 +8,7 @@ export class DatabaseCommonService implements IDatabaseCommonService {
   constructor(private entityManager: DataSource) {}
 
   /**
-   * Executes a stored procedure with n parameters. The statement is built for the engine of the
-   * connection (SQL Server, PostgreSQL or MySQL), see spDialects.ts.
-   * @param procedureName name of the stored procedure (validated: it is part of the statement)
-   * @param parameters object with the parameters (its values are passed in order)
+   * Executes a stored procedure with the statement of the engine of the connection (sp-dialects.ts).
    * @param isSingleObject if the procedure returns a single record, returns the object instead of the array
    */
   async executeStoredProcedure<T>(

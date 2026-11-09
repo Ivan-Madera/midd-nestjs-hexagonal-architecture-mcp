@@ -299,6 +299,40 @@ incluido `Authorization`. Ahora se redactan, y tampoco se loguea el body ni la q
 
 **Límite explícito en el body parser.** Express usa 100 kb por defecto, por debajo de la política de 2 MB.
 
+## Refactor: lo que enseñó la primera prueba real
+Una prueba de refactor (`midd-pf-initial`) terminó con `verify_standards` en verde pero con desviaciones que el estándar no admite.
+La causa principal estaba en el MCP, no en el agente:
+- **No había herramienta para la capa obligatoria en refactor.** La guía prohibía `scaffold_service` y pedía "reusar la infra del
+  proyecto"; si el proyecto no tenía seguridad, el agente la escribió a mano: `@nestjs/throttler`, un limitador de concurrencia propio,
+  un código `INITIAL-CONCURRENCY-001`, nombres `RL_*` inventados y luego valores distintos a los del área, y un correlation id sin
+  validar. **Decisión:** `adopt_shared_layer` trae la capa del estándar sin pisar nada; `main.ts` y `app.module.ts` solo se tocan
+  con el visto bueno del usuario (`patchEntry=true`), y aun así solo con inserciones.
+- **`infraRoot` por defecto era `common`.** El agente creó `src/common` siguiendo ese default. **Decisión:** el default es `shared`;
+  otra carpeta solo si `inspect_project` la detecta en el proyecto.
+- **El verificador miraba nombres, no lugares.** Aceptó `src/config`, `src/security` y `src/entities`. **Decisión:** reglas de
+  estructura como aviso (`SHARED_LAYOUT`, `ORM_ENTITY_OUTSIDE_MODULE`, `EDGE_ERROR_CODE`, `PARALLEL_SECURITY_DEPENDENCY`) y como error
+  lo que deja el servicio expuesto (`CORRELATION_ID_UNVALIDATED`, `AUTHORIZATION_DECIDED_NOT_INSTALLED`: la autorización se
+  registró como `required` y nunca se instaló). Valen para ambos flujos; un servicio greenfield no dispara ninguna (hay prueba).
+- **SP con la conexión por defecto.** `UtilsModule.register` solo conocía conexiones nombradas; ahora acepta `'Default'` para el
+  `forRoot` sin nombre de un proyecto existente.
+- **Conducta del agente** (solo en refactor): no borrar legacy ni tests sin aprobación y nunca antes de un build verde; un hallazgo
+  del verificador nunca es "falso positivo"; lo decidido en `AGENTS.md` se ejecuta; las integraciones externas van por el adapter
+  `http`; las rutas se muestran como cambio incompatible y se preguntan (el MCP no genera alias); nada de "listo para producción"
+  sin arrancar el servicio, probar el health y correr los tests.
+- **Respuestas sugeridas, canónicas.** En una prueba el agente sugirió por su cuenta las respuestas leyendo el proyecto y funcionó bien,
+  pero no era repetible. Ahora las calcula el MCP (`src/lib/suggestions.ts`, en la salida de `inspect_project`) siempre igual y con su
+  evidencia; el agente solo las muestra en cada pregunta (una por mensaje) y el usuario confirma o cambia. Sin evidencia no se sugiere: en
+  autorización, no encontrar un guard no es un "no". De `.env` solo se lee `API_CONTEXT`, nunca otro valor.
+**No verificado:** un refactor completo con `adopt_shared_layer` sobre un proyecto real y con modelos reales; `patchEntry` sobre un
+`main.ts` muy distinto al de prueba (microservicios, Swagger, un `create` con opciones en varias líneas).
+
+## Comentarios en el código generado
+Las plantillas venían de un dataset pensado para copiarse a mano y traían instrucciones ("si usas stored procedure, cambia este
+import", "borra el adapter que no uses") que el MCP ya resuelve solo: en el código final eran falsas. **Decisión:** el código generado
+solo comenta el porqué no obvio, en una línea; un pendiente es UNA línea `// TODO(midd): <qué falta>`, que el auditor lista y que se
+borra al resolverlo. En un servicio con un caso de uso los comentarios bajaron de 310 a 180 líneas (dominio: de 76 a 9). Lo que queda
+en `shared` es el porqué de seguridad y de los dialectos de SP. Los agentes tienen la misma regla: no narrar cambios ni repetir el código.
+
 ## Verificación (qué se probó)
 
 - `npm test` (50 tests): unitarios del MCP, más un e2e que genera un servicio completo, exige que

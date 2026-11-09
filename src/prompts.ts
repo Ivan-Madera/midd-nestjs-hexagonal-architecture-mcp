@@ -136,16 +136,34 @@ PASO 0b — DESCUBRE las reglas del workspace (OBLIGATORIO, antes de generar nad
   - Llama inspect_project(projectRoot). Te reporta: convención de carpetas/case de dominios, forma de la conexión TypeORM (forRoot por defecto vs nombradas, replication), infra transversal existente (JSON:API response, tipo de error, middleware, ConfigurationVariables) y módulos presentes.
   - Esas son las REGLAS que debes respetar en todo lo que sigue.
 
+PASO 0b' — PREGUNTAS GENERALES CON SUGERENCIA: inspect_project trae "Respuestas sugeridas" (prefijo de la API, prefijo de errores, base
+  de datos, autorización, Postman), cada una con su evidencia. Haz las 5 preguntas una por mensaje mostrando esa sugerencia para que el
+  usuario la confirme o la cambie. No inventes sugerencias propias ni apliques una sin confirmación; sin evidencia, pregunta sin proponer.
+
+PASO 0c — ADOPTA LA CAPA COMPARTIDA (OBLIGATORIO): llama adopt_shared_layer(projectRoot, prefijoApi). Escribe en src/shared solo lo que falta
+  de la capa obligatoria (seguridad, correlation id, configuración + Joi con los defaults del área, filtro de errores, health, utils) y
+  reporta lo que el proyecto ya tiene. NUNCA escribas a mano la seguridad, la configuración, el correlation id, las variables RL_* ni los
+  códigos de error del borde: vienen de esa capa, con sus nombres y valores. main.ts y app.module.ts: muéstrale al usuario los cambios que
+  lista la herramienta y, SOLO si acepta, vuelve a llamarla con patchEntry=true.
+
+PASO 0d — RUTAS (decisión del usuario): el estándar sirve /<prefijo>/api/v{N}/<recurso> y solo POST. Si el proyecto ya tiene rutas,
+  cambiarlas rompe a quien lo consume. Muéstrale la tabla ruta actual -> ruta nueva (con el verbo) marcada como cambio incompatible y
+  pregúntale. Nunca digas que se mantuvieron si cambiaron.
+
 PASO 1 — ANALIZA la lógica actual:
   - Lee controllers, services, módulos, DTOs, entidades y acceso a datos.
   - Identifica los casos de uso reales (cada endpoint / operación de negocio).
   - Por cada caso mapea: entrada (attributes), lógica de negocio, acceso a datos (repositorio TypeORM o stored procedure), y qué infra transversal usa.
 
 PASO 2 — GENERA el slice hexagonal en MODO REFACTOR:
+  - Con la capa adoptada usa infraStyle="dataset" (los imports van a src/shared). Solo si el usuario decide conservar su propia infra en otra
+    carpeta, usa infraStyle="project" con el infraRoot que reporta inspect_project (nunca inventes uno como "common").
+  - Cada entidad TypeORM va en su módulo (src/<modulo>/infrastructure/sql-database/entities/), nunca en una carpeta compartida.
+  - Una integración externa (SAP, otra API) es un caso con adapterType="http" (HttpClientService); nunca fetch suelto en un service.
   - Llama add_use_case con mode="refactor" y connectionStyle según inspect_project ("default" si la conexión es forRoot sin nombre; "named" si hay <X>Connection).
   - Usa como "dominio" el nombre de la carpeta existente CON SU MISMO CASE (p.ej. "setups" en minúscula si así está en el proyecto), para no colisionar en Windows (case-insensitive).
   - En modo refactor, add_use_case NO toca app.module ni los módulos del proyecto, y el adapter NO inyecta conexión nombrada si connectionStyle="default".
-  - NO corras scaffold_service sobre un proyecto que ya tiene su capa shared/infra: duplicaría e incluso rompería lo existente. scaffold_service es solo para greenfield.
+  - NO corras scaffold_service en un refactor: reemplazaría main.ts, app.module.ts y package.json del proyecto. scaffold_service es solo para greenfield.
 
 PASO 3 — MUEVE la lógica real a las piezas generadas:
   - Lógica de negocio del service plano -> domain service / application service.
@@ -159,9 +177,17 @@ PASO 4 — CABLEA respetando el proyecto:
 
 PASO 5 — COMPUERTA:
   - npm run build + npm test si hay tests.
-  - verify_standards sobre el proyecto. Corrige hasta que pase sin errores bloqueantes.
+  - verify_standards sobre el proyecto. Corrige hasta que pase sin errores bloqueantes. Un hallazgo del verificador NUNCA es un "falso
+    positivo" ni un problema de caché: corrígelo o pregúntale al usuario. Reporta también los avisos (WARN).
+  - Toda decisión registrada se ejecuta: AUTHORIZATION: required en AGENTS.md significa correr add_authorization.
 
-Reglas de oro: (1) descubre antes de generar; (2) adáptate a la convención del proyecto, no al revés; (3) reusa la infra existente, no la dupliques; (4) preserva el comportamiento, no inventes lógica; (5) no toques a ciegas módulos ajenos. Pregunta al usuario cuando un mapeo sea ambiguo.`
+PASO 6 — LIMPIEZA (solo con aprobación): no borres el código legacy ni los tests del proyecto por tu cuenta. Cuando el build y
+  verify_standards estén en verde con los casos migrados, propón qué borrar (lista de carpetas) y bórralo solo si el usuario acepta.
+
+CIERRE: nunca digas "listo para producción" sin haber arrancado el servicio, probado POST /<prefijo>/api/v1/health y corrido los tests.
+  Usa la fecha real del sistema en los reportes.
+
+Reglas de oro: (1) descubre antes de generar; (2) la capa obligatoria (seguridad, config, errores del borde) viene de adopt_shared_layer, nunca se escribe a mano; (3) no dupliques infra que el proyecto ya resuelve igual; (4) preserva el comportamiento y avisa todo cambio incompatible (rutas, verbos, content type); (5) no borres ni toques a ciegas lo del proyecto. Pregunta al usuario cuando un mapeo sea ambiguo.`
 
 export function registerPrompts(server: McpServer) {
   server.registerPrompt(

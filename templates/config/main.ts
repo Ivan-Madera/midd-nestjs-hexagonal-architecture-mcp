@@ -52,11 +52,7 @@ async function bootstrap() {
     res.removeHeader('X-Powered-By')
     next()
   })
-  // 5. CORS: origins come from CORS_ALLOWED_ORIGINS (comma separated). Its default is
-  //    '*' (any origin, tolerated for server-to-server middleware); set concrete
-  //    origins in the env var when they are defined, no code change needed.
-  //    Note: `cors` only treats the STRING '*' as a wildcard, not '*' inside an
-  //    array, hence the explicit check.
+  // 5. CORS from CORS_ALLOWED_ORIGINS. `cors` only treats the STRING '*' as a wildcard, hence the check.
   const allowAnyOrigin = security.corsAllowedOrigins.includes('*')
   app.enableCors({
     origin: allowAnyOrigin ? '*' : security.corsAllowedOrigins,
@@ -65,10 +61,7 @@ async function bootstrap() {
     exposedHeaders: ['x-correlation-id', 'Retry-After']
   })
 
-  // --- Base URL: /{context}/api/v{N}/{resource} ----------------------------
-  // The global prefix is ONLY the context (from config). The version lives in
-  // each controller (@Controller({ path, version })), so bumping one endpoint
-  // to v2 never moves the others.
+  // Base URL /{context}/api/v{N}/{resource}: the version lives in each controller.
   app.setGlobalPrefix(server.ApiContext)
   app.enableVersioning({
     type: VersioningType.URI,

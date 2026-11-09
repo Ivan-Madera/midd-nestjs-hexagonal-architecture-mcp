@@ -6,10 +6,6 @@ import { I__Caso__Service } from '../../domain/ports/inbound/__casoKebab__.inbou
 import { __Request__ } from '../../domain/entities/__requestKebab__.entity'
 import { __Entidad__ } from '../../domain/entities/__entidadKebab__.entity'
 
-// Importa SIEMPRE las dependencias como interfaces (puertos/ifaces), nunca
-// clases concretas. Si el caso necesita config (p.ej. branching por un valor de
-// negocio), inyecta @Inject(ConfigurationVariables.KEY) en el constructor y
-// añade ConfigurationVariables.KEY al inject del factory del core.module.
 export class __Caso__ApplicationService implements I__Caso__Application {
   constructor(private readonly __caso__Service: I__Caso__Service) {}
 

@@ -155,7 +155,7 @@ function patchAdapter(file: string, methods: PortMethod[], adapterType: AdapterT
     } else {
       const impl =
         `\n  async ${m.name}(data: ${m.request}): Promise<${m.response}> {\n` +
-        `    // TODO: implementa la consulta TypeORM para ${m.name} y mapea a ${m.response}.\n` +
+        `    // TODO(midd): implementa la consulta TypeORM de ${m.name}.\n` +
         `    const row = await this.repository.findOne({ where: { ...data } as any })\n` +
         `    return row ? Mapper(${m.response}, row) : null\n` +
         `  }\n`
@@ -179,10 +179,8 @@ function ensureEntity(opts: {
   const full = join(projectRoot, rel)
   if (existsSync(full)) return
   const body =
-    `// Entidad de dominio pura (sin decoradores de framework). Declara los campos\n` +
-    `// como opcionales; se poblan por mapeo parcial desde el adapter.\n` +
     `export class ${entity} {\n` +
-    `  // define aquí las propiedades de ${entity}\n` +
+    `  // TODO(midd): declara los campos de ${entity}.\n` +
     `}\n`
   writeFileSync(full, body, 'utf8')
   created.push(rel)

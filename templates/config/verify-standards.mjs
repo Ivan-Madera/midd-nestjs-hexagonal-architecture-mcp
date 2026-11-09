@@ -129,6 +129,34 @@ for (const file of allFiles) {
   }
 }
 
+// 1d. STRUCTURE (WARN). The mandatory shared layer lives in src/shared/infrastructure, and every TypeORM entity lives
+//     in the module that owns it (src/<module>/infrastructure/sql-database/entities). A piece that is somewhere else
+//     usually means it was written by hand instead of coming from the MCP (adopt_shared_layer / scaffold_service).
+const squash = (p) => p.toLowerCase().replace(/[-_]/g, '')
+const srcFiles = new Set(allFiles.map((f) => squash(rel(f))))
+if (existsSync(join(SRC, 'main.ts'))) {
+  for (const piece of [
+    'src/shared/infrastructure/config/configuration-variables.ts',
+    'src/shared/infrastructure/config/joi-schema.ts',
+    'src/shared/infrastructure/security/security.module.ts',
+    'src/shared/infrastructure/security/rate-limit.guard.ts',
+    'src/shared/infrastructure/security/payload-size.middleware.ts',
+    'src/shared/infrastructure/security/cache-control.middleware.ts',
+    'src/shared/infrastructure/observability/correlation.middleware.ts',
+    'src/shared/infrastructure/http-server/exception-filters/generic-exception-filter.ts',
+    'src/shared/infrastructure/http-server/controllers/health.controller.ts'
+  ]) {
+    if (!srcFiles.has(squash(piece)))
+      addWarn('SHARED_LAYOUT', `${piece} not found: the mandatory shared layer lives in src/shared/infrastructure (adopt_shared_layer adds what is missing).`, piece)
+  }
+}
+for (const file of allFiles.filter((f) => f.endsWith('.ts'))) {
+  const path = rel(file)
+  if (/^src\/[^/]+\/infrastructure\/sql-database\/entities\//.test(path)) continue
+  if (/@Entity\s*\(/.test(readCode(file)))
+    addWarn('ORM_ENTITY_OUTSIDE_MODULE', 'TypeORM entity outside its module: it goes in src/<module>/infrastructure/sql-database/entities/.', path)
+}
+
 // ───────────────────────────────────────────────────────────────────────────
 // 2. MANDATORY HTTP SECURITY BASELINE (ERROR) — main.ts + shared/infrastructure/security
 // ───────────────────────────────────────────────────────────────────────────
@@ -180,6 +208,12 @@ if (!main) {
   // Correlation id: caller-independent (generate-if-absent) and registered in main.ts.
   const correlationDefined = anyFileMatches(/x-correlation-id/i) && anyFileMatches(/randomUUID\s*\(/)
   const correlationRegistered = /app\.use\(\s*correlation/i.test(main)
+  // The id the caller sends goes into every log line: it must be checked before it is reused.
+  for (const file of allFiles.filter((f) => f.endsWith('.ts'))) {
+    const code = readCode(file)
+    if (/x-correlation-id|CORRELATION_HEADER/i.test(code) && /randomUUID\s*\(/.test(code) && /headers/.test(code) && !/\.test\s*\(|\.match\s*\(/.test(code))
+      addError('CORRELATION_ID_UNVALIDATED', 'The incoming x-correlation-id is reused without validation (log forging). Accept only safe characters and a bounded length; otherwise generate a new one.', rel(file))
+  }
   if (!correlationDefined || !correlationRegistered)
     addError(
       'MISSING_CORRELATION_ID',
@@ -230,6 +264,16 @@ if (!main) {
       "app.enableVersioning({ type: URI, prefix: 'api/v', defaultVersion: '1' }) is required (version lives in each controller).",
       'src/main.ts'
     )
+}
+
+// The rejections of the edge (429 rate / concurrency, 413 payload) answer with the codes of the area, the same in every
+// service, so whoever consumes the API can handle them. A code invented for them is a hand-written control.
+const EDGE_CODES = new Set(['SERVICE-TOOMANYREQUESTS-017', 'SERVICE-TOOMANYCONCURRENT-018', 'SERVICE-PAYLOADTOOLARGE-019'])
+for (const file of allFiles.filter((f) => f.endsWith('.ts'))) {
+  for (const m of readCode(file).matchAll(/'([A-Z][A-Z0-9]*-([A-Z0-9]+)-\d{3,4})'/g)) {
+    if (/TOOMANY|CONCURREN|PAYLOAD|RATELIMIT|THROTTL/.test(m[2]) && !EDGE_CODES.has(m[1]))
+      addWarn('EDGE_ERROR_CODE', `"${m[1]}": rate limit, concurrency and payload rejections use the area codes (${[...EDGE_CODES].join(', ')}).`, rel(file))
+  }
 }
 
 // Env validation: every mandatory variable must be in the Joi schema AND in .env.example
@@ -327,6 +371,11 @@ if (packageJson) {
     if (declared[name] || declared[`@types/${name}`])
       addError('FORBIDDEN_DEPENDENCY', `"${name}" is declared in package.json. ${advice}`, 'package.json')
   }
+  // The rate limit of the area is the SecurityModule guard (C1 + C2): a second limiter duplicates it with other rules.
+  for (const name of ['@nestjs/throttler', 'express-rate-limit']) {
+    if (declared[name])
+      addWarn('PARALLEL_SECURITY_DEPENDENCY', `"${name}" duplicates the rate limit of the area (SecurityModule, RL_* variables). Use the shared security layer instead.`, 'package.json')
+  }
 }
 
 // ───────────────────────────────────────────────────────────────────────────
@@ -335,6 +384,11 @@ if (packageJson) {
 //     it must be registered, ordered after the rate limit, validated and fail-closed.
 // ───────────────────────────────────────────────────────────────────────────
 const authorizationDir = join(SRC, 'shared', 'authorization')
+// The user's answer is kept in AGENTS.md. "required" with no authorization module means the endpoints are open.
+const agentsMd = read(join(ROOT, 'AGENTS.md'))
+const preferences = agentsMd.slice(Math.max(0, agentsMd.indexOf('BEGIN midd-nestjs-preferences')))
+if (/^AUTHORIZATION:[ \t]*required\b/m.test(preferences) && !existsSync(authorizationDir) && !importsArrayIdentifiers(read(join(SRC, 'app.module.ts'))).includes('AuthorizationModule'))
+  addError('AUTHORIZATION_DECIDED_NOT_INSTALLED', 'AGENTS.md says AUTHORIZATION: required but the service has no authorization module: the endpoints are NOT protected. Run add_authorization.', 'AGENTS.md')
 if (existsSync(authorizationDir)) {
   const importedModules = importsArrayIdentifiers(read(join(SRC, 'app.module.ts')))
   if (!importedModules.includes('AuthorizationModule')) {
@@ -393,6 +447,7 @@ if (existsSync(databaseContext)) {
   const registerCall = /UtilsModule\.register\(\s*\[([^\]]*)\]/.exec(appModuleText)
   const registered = registerCall ? [...registerCall[1].matchAll(/'([^']+)'/g)].map((m) => m[1]) : null
   for (const name of [...new Set([...referenced, ...declared.keys()])].sort()) {
+    if (name === 'Default') continue // the unnamed TypeOrmModule.forRoot of a refactored project (UtilsModule DEFAULT_CONNECTION)
     const className = declared.get(name)
     if (!className) {
       addError(

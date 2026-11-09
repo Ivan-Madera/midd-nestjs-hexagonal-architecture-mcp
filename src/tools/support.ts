@@ -4,6 +4,7 @@ import { existsSync, copyFileSync, mkdirSync } from 'node:fs'
 import { execFileSync } from 'node:child_process'
 import { datasetPath, listTemplateFiles, readTemplate } from '../lib/dataset.js'
 import { inspectProject } from '../lib/inspect.js'
+import { SUGGESTION_LABELS } from '../lib/suggestions.js'
 import { listConnections, nextConnectionName } from '../lib/connections.js'
 import { MOTORES } from '../lib/engines.js'
 import { learnVerifyRun } from '../lib/learnings.js'
@@ -107,6 +108,13 @@ export async function inspectProjectTool(a: { projectRoot: string }) {
   lines.push(`    - Middleware JSON:API: ${r.existingInfra.jsonApiMiddleware ?? '(no encontrado)'}`)
   lines.push(`    - ConfigurationVariables: ${r.existingInfra.configVariables ?? '(no encontrado)'}`)
   lines.push(`    - Carpeta raíz de infra (infraRoot): ${r.existingInfra.infraRoot ?? '(no detectada)'}`)
+  const suggested = SUGGESTION_LABELS.filter(([key]) => r.suggestedAnswers[key])
+  lines.push('  Respuestas sugeridas a las 5 preguntas generales (leidas del proyecto; el usuario CONFIRMA o cambia cada una, una por mensaje):')
+  for (const [key, label] of SUGGESTION_LABELS) {
+    const s = r.suggestedAnswers[key]
+    lines.push(s ? `    ${label}: ${s.value}   (evidencia: ${s.evidence})` : `    ${label}: sin sugerencia (no hay evidencia en el proyecto: pregunta sin proponer valor)`)
+  }
+  if (!suggested.length) lines.push('    (ninguna: proyecto vacio o sin pistas)')
   if (r.notes.length) {
     lines.push('  Reglas a respetar en el refactor:')
     for (const n of r.notes) lines.push(`    - ${n}`)

@@ -1,18 +1,12 @@
 import { registerAs } from '@nestjs/config'
 
 /**
- * Single source of configuration of the service. It structures the environment
- * variables into typed objects. NOTHING may read process.env outside this file.
- *
- * Canonical base: add the groups the service needs (external apis, suppliers,
- * storedProcedures, etc.) keeping this pattern. Values are read lazily (inside
- * the factory), after ConfigModule has loaded and validated the .env.
+ * Single source of configuration: nothing reads process.env outside this file (read lazily, after Joi).
  */
 export default registerAs('ConfigurationVariables', () => {
   return {
     database: {
-      // One entry per connection, added by scaffold_service and add_use_case. Each entry reads the
-      // variables DB_<CONNECTION>_HOST, _PORT, _USERNAME, _PASSWORD and _NAME.
+      // One entry per connection (DB_<CONNECTION>_*).
     },
     server: {
       Port: process.env.PORT,
@@ -20,8 +14,6 @@ export default registerAs('ConfigurationVariables', () => {
       ApiContext: process.env.API_CONTEXT
     },
     security: {
-      // Allowed origins, comma separated. Joi defaults it to '*' (tolerated for server-to-server middleware);
-      // set concrete origins in CORS_ALLOWED_ORIGINS when they are defined. No code change needed.
       corsAllowedOrigins: (process.env.CORS_ALLOWED_ORIGINS ?? '')
         .split(',')
         .map((origin) => origin.trim())

@@ -14,6 +14,7 @@
  */
 import { join, relative, basename } from 'node:path'
 import { existsSync, readFileSync, readdirSync, statSync } from 'node:fs'
+import { suggestAnswers, type SuggestedAnswers } from './suggestions.js'
 
 const read = (p: string) => (existsSync(p) ? readFileSync(p, 'utf8') : '')
 
@@ -64,6 +65,8 @@ export type ProjectInspection = {
   modules: string[]
   // Si ya parece hexagonal (tiene carpetas core/infrastructure).
   looksHexagonal: boolean
+  // Respuestas sugeridas a las 5 preguntas generales, leidas del proyecto, cada una con su evidencia.
+  suggestedAnswers: SuggestedAnswers
   notes: string[]
 }
 
@@ -193,6 +196,7 @@ export function inspectProject(projectRoot: string): ProjectInspection {
     existingInfra,
     modules,
     looksHexagonal,
+    suggestedAnswers: suggestAnswers(projectRoot),
     notes
   }
 }

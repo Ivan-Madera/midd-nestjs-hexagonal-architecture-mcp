@@ -14,9 +14,6 @@ import { I__Caso__Application } from '../../../core/application/interfaces/__cas
 import { __CASO___APPLICATION } from '../../../core/__dominioKebab__.core.module'
 import { __Caso__RequestJsonApiDTO } from '../dto/__casoKebab__-request-json-api.dto'
 
-// MANDATORY convention: kebab-case path and the version declared in the controller
-// (the first version is ALWAYS '1'). Final URL: /{context}/api/v1/<ruta-dominio>/__accion__
-// where {context} is the global prefix (API_CONTEXT) and `api/v` is set in main.ts.
 @Controller({ path: '<ruta-dominio>', version: '1' })
 export class __Caso__Controller {
   constructor(
@@ -35,7 +32,6 @@ export class __Caso__Controller {
         data: { attributes }
       } = body
       const responseData = await this.__caso__Application.__casoDeUso__(attributes)
-      // `links.self` queda como path relativo (req.url): comportamiento del estándar.
       return new ResponseJsonApiBase({
         attributes: responseData,
         type: '<tipo-recurso>',

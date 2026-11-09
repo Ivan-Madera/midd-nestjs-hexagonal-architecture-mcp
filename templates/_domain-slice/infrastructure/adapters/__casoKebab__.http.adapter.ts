@@ -1,10 +1,4 @@
-// Adapter de API externa. Consume el servicio externo con el fetch nativo (HttpClientService, sin axios) y
-// traduce la respuesta a una entidad de dominio. No usa base de datos.
-//
-// Hexagonal puro: la URL, el verbo y la ruta son detalles de INFRAESTRUCTURA; el puerto de dominio solo
-// recibe `data`. La URL base sale de ConfigurationVariables.externalApis (variable __ENV_VAR_API__).
-// TODO: si la API exige credenciales, leelas de ConfigurationVariables (nunca de process.env ni en el codigo)
-// y envialas en `headers`.
+// TODO(midd): si la API exige credenciales, leelas de ConfigurationVariables y envialas en headers.
 import { Inject } from '@nestjs/common'
 import { ConfigType } from '@nestjs/config'
 import { I__Caso__Repository } from '../../core/domain/ports/outbound/__casoKebab__.outbound.port'
@@ -30,14 +24,11 @@ export class __Caso__Adapter implements I__Caso__Repository {
     return this.result(response, __Entidad__)
   }
 
-  // Base URL of the external API joined to a path, without doubling the slash.
   private url(path: string): string {
     return `${this.config.externalApis.__ApiExterna__.baseUrl.replace(/\/+$/, '')}${path}`
   }
 
-  // 404 means nothing was found: null, and the application service decides what that means. Not reaching the
-  // API, a timeout or any other error status is an upstream error of the domain catalog. HttpClientService never
-  // throws: it resolves to { status, data, ... } and a missing status means the call itself failed.
+  // 404 = sin resultado (null). Sin respuesta, timeout o cualquier otro status = error de la API externa.
   private result<T>(response: any, target: new () => T): T {
     if (response?.status === 404) return null
     if (!response || response.status === undefined || response.status >= 400) {

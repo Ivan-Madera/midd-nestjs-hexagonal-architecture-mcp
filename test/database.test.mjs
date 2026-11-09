@@ -356,7 +356,7 @@ test('TypeORM entities are loaded automatically, and the placeholders of the ent
 
     // the entity still carries the table/column placeholders until someone fills them: it must say so with TODO
     const entity = read(root, 'src/reports/infrastructure/sql-database/entities/product.entity.ts')
-    assert.match(entity, /TODO: replace '<nombre_tabla>'/)
+    assert.match(entity, /TODO\(midd\): .*'<nombre_tabla>'/)
   } finally {
     cleanup(root)
   }

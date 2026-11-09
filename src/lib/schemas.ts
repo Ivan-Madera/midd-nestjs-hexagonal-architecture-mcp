@@ -133,7 +133,7 @@ export const infraRoot = z
   .string()
   .optional()
   .describe(
-    'Solo con infraStyle="project": carpeta (relativa a src/) de la infra transversal propia del proyecto que reemplaza a "shared" en los imports generados, p.ej. "common". Por defecto "common".'
+    'Solo con infraStyle="project": carpeta (relativa a src/) de la infra transversal propia del proyecto que reemplaza a "shared" en los imports generados. Por defecto "shared" (la carpeta del estandar). Pasa otra solo si inspect_project la reporto como infraRoot del proyecto; nunca la inventes.'
   )
 
 export const motor = z

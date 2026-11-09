@@ -24,9 +24,7 @@ export type DtoResult = { patched: string[]; warnings: string[] }
 
 type FieldMap = Record<string, unknown>
 
-const NOTA =
-  '// NOTA (agente/usuario): campos derivados del spec (dtos). Revisa tipos,\n' +
-  '  // obligatoriedad y validadores contra el esquema real antes de cerrar el caso.'
+const NOTA = '// TODO(midd): campos tomados del spec; revisa tipos y obligatoriedad contra el esquema real.'
 
 /** Mapea un tipo del spec a un tipo TS. */
 function tsType(t: unknown): string {

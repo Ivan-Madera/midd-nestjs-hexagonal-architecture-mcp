@@ -3,17 +3,9 @@ import { Request } from 'express'
 import { ResponseJsonApiBase } from '../dto/response-data-json-api-base'
 
 /**
- * Liveness probe, created with every new service so a fresh checkout can prove it starts:
- *
- *   POST /{context}/api/v1/health      Content-Type: application/vnd.api+json
- *
- * It follows the same policy as every endpoint of the area (POST only, JSON:API envelope,
- * version declared in the controller). It answers 200 as soon as the HTTP edge is up and
- * deliberately checks nothing else: a probe that depends on the database would fail for reasons
- * unrelated to the process being alive and would leak internals. It returns no version or host.
- *
- * Authorization: add_authorization marks this handler as public. Without that mark the global
- * guard would answer 401 and the probe would stop being useful.
+ * Liveness probe: POST /{context}/api/v1/health answers 200 as soon as the HTTP edge is up.
+ * It checks nothing else on purpose (a database check fails for unrelated reasons and leaks internals).
+ * With authorization enabled it must stay public, or it answers 401.
  */
 @Controller({ path: 'health', version: '1' })
 export class HealthController {

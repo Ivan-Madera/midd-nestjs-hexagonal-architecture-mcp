@@ -1,5 +1,3 @@
-// Adapter TypeORM repository. Usa esta variante cuando el acceso a datos es
-// vía repositorio de entidad. Para stored procedures, usa __casoKebab__.sp.adapter.ts.
 import { InjectRepository } from '@nestjs/typeorm'
 import { Repository } from 'typeorm'
 import { I__Caso__Repository } from '../../core/domain/ports/outbound/__casoKebab__.outbound.port'
@@ -15,13 +13,11 @@ export class __Caso__Adapter implements I__Caso__Repository {
   ) {}
 
   async __metodo__(data: __Request__): Promise<__Entidad__> {
-    // Mapea los campos de `data` al criterio de búsqueda que corresponda.
+    // TODO(midd): ajusta el criterio de busqueda (where) a las columnas reales.
     const row = await this.repository.findOne({ where: { ...data } as any })
     if (!row) {
       return null
     }
-    // La entidad TypeORM y la de dominio son clases distintas: se mapea con Mapper (los campos de la
-    // entidad de dominio llevan @Expose). Nunca se castea la fila con `as`.
     return Mapper(__Entidad__, row)
   }
 }

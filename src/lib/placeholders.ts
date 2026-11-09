@@ -60,7 +60,7 @@ export function buildPlaceholderMap(input: {
   metodoHttp?: string // adapter http: GET | POST | PUT (GET por defecto)
   connectionStyle?: 'named' | 'default' // forma de la conexión TypeORM del proyecto
   infraStyle?: 'dataset' | 'project' // capa de infra transversal de los imports
-  infraRoot?: string // carpeta de infra propia (project), por defecto "common"
+  infraRoot?: string // carpeta de infra propia (project), por defecto "shared" (la del estandar)
 }): PlaceholderMap {
   const camel = (s: string) => s.charAt(0).toLowerCase() + s.slice(1)
   // PascalCase: primera letra a mayúscula, resto preservado. Normaliza el input
@@ -101,10 +101,10 @@ export function buildPlaceholderMap(input: {
 
   // Segmento de carpeta de la infra transversal en los imports generados.
   // dataset -> "shared" (capa del dataset); project -> infraRoot del proyecto
-  // (por defecto "common"). Solo cambia el PATH; los nombres de símbolo los
+  // (por defecto "shared", la carpeta del estandar). Solo cambia el PATH; los nombres de símbolo los
   // concilia el agente en refactor.
   const sharedRoot =
-    input.infraStyle === 'project' ? (input.infraRoot || 'common') : 'shared'
+    input.infraStyle === 'project' ? (input.infraRoot || 'shared') : 'shared'
 
 
 

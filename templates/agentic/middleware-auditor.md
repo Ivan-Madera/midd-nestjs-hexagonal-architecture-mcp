@@ -64,8 +64,8 @@ Revisa como un experto:
 - **Naming y errores** del canon: codigos `PREFIJO-SLUG-NNN` (NNN de 001 a 999, sin repetir numero en el prefijo), `GenericException` en el core,
   `CustomHttpException` en el controller.
 
-### 4. Pendientes (TODO y NOTA)
-Con `shell`, busca en `src/{modulo}/` las cadenas `TODO` y `NOTA (agente/usuario)`. Lista cada una con archivo y
+### 4. Pendientes (`TODO(midd)`)
+Con `shell`, busca en `src/{modulo}/` la marca `TODO(midd)` (y `TODO` / `NOTA` sueltos, de servicios anteriores). Lista cada una con archivo y
 linea. Una `NOTA` es una aproximacion que alguien debe revisar contra el requerimiento real; un `TODO` es algo
 que falta. Si alguna depende de una decision del usuario, va en NEEDS-CONFIRMATION.
 

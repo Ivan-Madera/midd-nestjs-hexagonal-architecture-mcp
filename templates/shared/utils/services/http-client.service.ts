@@ -28,11 +28,8 @@ const redactHeaders = (headers: Record<string, string> = {}): Record<string, str
 const withoutQuery = (url: string): string => url.split('?')[0]
 
 /**
- * HTTP client over the NATIVE fetch (no axios: fewer dependencies, fewer CVEs).
- * Failures never throw: they resolve to { status, data: null, statusText,
- * responseErrorApi } so the adapter decides how to translate them to a domain
- * error. The request correlation id is forwarded so the trace crosses systems.
- * The response body is never assumed to be JSON.
+ * HTTP client over the native fetch (no axios). Forwards the correlation id.
+ * Failures never throw: they resolve to { status, data: null, statusText, responseErrorApi }.
  */
 export class HttpClientService implements IHttpClientService {
   async get(url: string, options?: HttpOptions): Promise<any> {
