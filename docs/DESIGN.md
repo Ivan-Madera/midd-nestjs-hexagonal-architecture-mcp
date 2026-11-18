@@ -26,9 +26,10 @@ el verificador, que devuelve reglas con ID estable para que el agente corrija en
 | CORS | `CORS_ALLOWED_ORIGINS` vale `*` **por defecto** (Joi y `.env.example`), sin avisos; se cambia solo por variable de entorno. Lo demás de seguridad es obligatorio y bloqueante | Canon |
 | Autorización | **Opt-in: el agente pregunta.** Secure-by-default y fail-closed cuando se activa | Librería |
 | Dependencias prohibidas | `axios` (usar `fetch` nativo) y `uuid` (usar `randomUUID` de `node:crypto`) | Acordado |
-| Capa agéntica | Un agente que se selecciona (`middleware-generator`) + dos sub-agentes internos (`middleware-gen-worker`, `middleware-auditor`) + sección en `AGENTS.md` + tool `install_agentic_kit`. Sin hook bloqueante ni YAML de fases | Acordado |
-| Modelos de los agentes | Los del kit de `lib-midd-mcp-architecture`: orquestador `claude-sonnet-4.5`, worker `claude-haiku-4.5`, auditor `claude-opus-4.5`, con sus cadenas de respaldo terminadas en `Auto`. Sobrescribibles con el parámetro `models` | Acordado |
-| `get_rules` | Se sirve completo, sin partir por secciones | Acordado |
+| Capa agéntica | Un agente que se selecciona (`middleware-generator`) + 4 sub-agentes internos con emoji y modelo propio: `middleware-gen-worker` (completa el andamiaje y corrige bugs acotados), `middleware-auditor` (valida módulos y revisa diffs), `middleware-appsec` (seguridad y secretos, solo lectura) y `middleware-tester`, que toma de `agency-agents/test-automation-engineer` (MIT) solo los principios de determinismo y los lleva a jest: el original es de pruebas de navegador con Playwright/Cypress y no aplica a un backend. + sección en `AGENTS.md` + tool `install_agentic_kit`. Sin hook bloqueante ni YAML de fases | Acordado |
+| Equipo reducido (v0.3.0) | De 12 agentes a 5 para ahorrar tokens sin perder calidad: cada sub-agente paga contexto nuevo y la tabla de delegación del orquestador crecía con cada uno. Se quitaron `onboarding`, `architect`, `backend`, `dbre` (las plantillas y `rules.yaml` ya fijan la arquitectura; el MCP no diseña backend ni genera migraciones, y `inspect_project` ya da el mapa del repo), `fixer` (pasó al worker como "modo corrección"), `reviewer` (pasó al auditor como "modo diff") y `secrets` (pasó a `appsec`). También se quitó el workflow `middleware-parallel-review`, que llamaba a tres de ellos. Una actualización borra del repo consumidor esos archivos solo si llevan la marca `managed by` | Acordado |
+| Pruebas unitarias | El tester **no entra solo**: el orquestador pregunta una vez, con el módulo en verde, y lo lanza solo con un sí del usuario o si las pidió de entrada. Antes entraba solo si el spec traía reglas de negocio | Acordado |
+| Modelos de los agentes | Los del kit de `lib-midd-mcp-architecture`: orquestador `claude-sonnet-4.5`, worker `claude-haiku-4.5`, auditor `claude-opus-4.5`, con sus cadenas de respaldo terminadas en `Auto`. `appsec` usa opus (un error de seguridad cuesta caro) y `tester` sonnet. Sobrescribibles con el parámetro `models` | Acordado || `get_rules` | Se sirve completo, sin partir por secciones | Acordado |
 | Health | Todo servicio nuevo trae `POST /{contexto}/api/v1/health` (liveness, `status: UP`). POST porque la política del área es POST-only; público aunque se active la autorización | Acordado |
 | Aprendizaje | **Solo por repo** (`docs/mcp-learnings.json`), consultivo. El aprendizaje entre repos queda para después | Acordado |
 | Alcance v1 | Solo NestJS. Interfaz de stack lista para sumar Java después | Acordado |
@@ -81,14 +82,16 @@ CommonJS. `GeneratorUuidService` (antes `GeneratorUuuidService`) usa `randomUUID
 declarar o importar el paquete; que aparezca como dependencia interna de `typeorm` o `mssql` es ajeno al
 proyecto y no se puede evitar.
 
-**Capa agéntica (y por qué no lleva hook ni YAML de fases).** Lo que el MCP de la librería resolvía con un
+**Capa agéntica (y por qué no lleva hook ni YAML de fases; la única receta YAML que instala es una revisión en paralelo de solo auditoría, no un flujo de fases).** Lo que el MCP de la librería resolvía con un
 flujo rígido de fases y un hook que bloquea escrituras, aquí lo resuelven las plantillas y el verificador, que
 no dependen del modelo. Quedó lo que aporta valor: (1) un agente que hace las preguntas, produce un
-`middleware.spec.yaml` válido y orquesta, (2) un worker y un auditor tras bambalinas, y (3) una sección en
+`middleware.spec.yaml` válido y orquesta, (2) un equipo de sub-agentes tras bambalinas (worker, auditor, appsec y tester), y (3) una sección en
 `AGENTS.md` que da a todos el mismo punto de entrada.
-- **Pipeline multi-modelo, adaptado.** Igual que el kit de la librería: el orquestador lanza `subagent` en dos
-  etapas (`complete` y luego `audit`), reintenta hasta 2 veces ante `FAIL`, pregunta al usuario ante
-  `NEEDS-CONFIRMATION` y corre él mismo el BUILD GATE (los sub-agentes pueden no tener shell). **Una diferencia
+- **Pipeline multi-modelo, adaptado.** Igual que el kit de la librería: el orquestador lanza `subagent` por etapas
+  (`complete`, `audit`, BUILD GATE, y al final `test` con el tester, solo si el usuario pidió pruebas o aceptó la pregunta del orquestador, y un segundo
+  BUILD GATE), reintenta hasta 2 veces por responsable ante un fallo, pregunta al usuario ante `NEEDS-CONFIRMATION` y corre él mismo el BUILD GATE
+  (los sub-agentes pueden no tener shell). Las pruebas van al final a propósito: primero tiene que funcionar el caso de uso. Quién arregla cada fallo
+  está definido (prueba mala: el tester; código que no cumple el spec: el worker, en un módulo recién generado o en uno existente). **Una diferencia
   de fondo:** el worker NO escribe el hexágono a mano. Las plantillas ya lo generan de forma determinista y
   reescribirlo con un modelo barato degradaría justo lo que hace confiable al híbrido. El worker completa lo que
   el generador deja como andamiaje (guardas de reglas de negocio, consultas TypeORM, campos de entidades),
@@ -97,9 +100,21 @@ no dependen del modelo. Quedó lo que aporta valor: (1) un agente que hace las p
   `FAIL`), build + tests + lint reales, revisión de lo que una regex no juzga (regla de dependencia, SRP,
   fidelidad al spec), búsqueda de `TODO`/`NOTA`, `npm audit`, y cierra con `record_architecture`.
   Veredictos: `PASS`, `NEEDS-CONFIRMATION`, `PASS-PARCIAL`, `FAIL`. Un build que no corrió nunca es `PASS`.
-- **Los tres se instalan y se actualizan como conjunto.** Si uno de los nombres ya existe de otro kit (el de la
+- **Todos los agentes del kit se instalan y se actualizan como conjunto.** Si uno de los nombres ya existe de otro kit (el de la
   librería usa los mismos nombres), no se pisa y la herramienta avisa, porque mezclar instrucciones de dos MCP
   rompería el pipeline. Reemplazarlos es explícito (`overwrite=true`).
+- **A quién puede delegar el orquestador.** Antes el kit usaba `toolsSettings.crew`, una clave que no aparece en la documentación de Kiro, junto con
+  `subagent` a secas (que permite lanzar cualquier agente), así que el límite era aparente. Ahora usa las claves documentadas: `toolsSettings.subagent`
+  (`availableAgents` y `trustedAgents`, que lee CLI 2.x) y una regla `permissions` con `capability: subagent` (que leen CLI V3 y el IDE). Los nombres salen del registro
+  `AGENT_REGISTRY`, no de una lista a mano. Se mantiene `subagent` en `tools` a propósito: la alternativa documentada para V3 (`subagent/<nombre>` en `tools`) deja al
+  orquestador sin delegación si esa sintaxis no aplica en el IDE, y no pude comprobarlo. Con la regla, el equipo arranca sin pedir permiso y cualquier otro agente le
+  pregunta al usuario; además la plantilla le prohíbe lanzar agentes ajenos. **No verificado en Kiro:** que el frontmatter `.md` del IDE lea el bloque `permissions`.
+  Y nada depende del segundo plano ni del paralelo: sin `run_workflow` usa varios `subagent` en una llamada y, si tampoco puede, los corre en secuencia.
+- **Ahorro de tokens: el equipo se lanza solo si hace falta.** Cada sub-agente arranca con contexto nuevo (relee reglas, spec y código), así que se paga por cada uno. El orquestador aplica una regla de necesidad
+  ("qué aporta que yo no pueda hacer aquí") y muestra el costo en el plan y en el reporte. En un módulo nuevo el worker corre solo si hay algo que completar (`TODO(midd)`, `AVISO`, `NOTA`, reglas de negocio o
+  falta de esquema) y el auditor corre siempre que el módulo no sea **simple** (solo TypeORM, sin worker, sin refactor, sin `AUTHORIZATION: required`). En un módulo simple el orquestador corre `verify_standards` y el
+  build él mismo y llama `record_architecture`; si algo falla, escala al camino completo. El auditor no se salta con reglas de negocio, SP, API externa, autorización ni refactor: es la red de seguridad. No se
+  pasan extractos de `get_rules` a los sub-agentes: ahorraría más, pero un extracto incompleto haría trabajar a un agente con reglas parciales. **No medido:** el ahorro real de tokens.
 - **Los modelos se cambian con el parámetro `models`, no editando el `.md`:** volver a instalar reemplaza los
   archivos gestionados. El id se valida porque se escribe dentro del YAML del agente.
 - **Una sola fuente del procedimiento.** El paso a paso vive en `prompts.ts` y se sirve con `get_flow`; el
@@ -368,7 +383,7 @@ en `shared` es el porqué de seguridad y de los dialectos de SP. Los agentes tie
 
 ## Pendiente (próximas fases)
 
-1. **Probar el pipeline con modelos reales en Kiro.** Los tres agentes están escritos y su contrato con el MCP
+1. **Probar el pipeline con modelos reales en Kiro.** Los agentes están escritos y su contrato con el MCP
    está probado (frontmatter, tools que nombran, nombres de sub-agentes consistentes, `models`), pero **nadie ha
    ejecutado el pipeline `subagent`**: no se sabe qué tan bien sigue las fases el orquestador, si el worker de
    Haiku completa bien las guardas sin inventar, ni si el auditor encuentra lo que debe. Tampoco se verificó que

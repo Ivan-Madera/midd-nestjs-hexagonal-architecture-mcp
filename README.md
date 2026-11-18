@@ -8,7 +8,7 @@
 ![stack](https://img.shields.io/badge/stack-Node.js%20%2B%20TypeScript-3178c6)
 ![protocol](https://img.shields.io/badge/protocol-Model%20Context%20Protocol-6E56CF)
 ![target](https://img.shields.io/badge/target-NestJS%20Hexagonal-E0234E)
-![version](https://img.shields.io/badge/version-0.1.0-green)
+![version](https://img.shields.io/badge/version-0.3.0-green)
 
 Servidor **MCP** (Model Context Protocol) del área Middleware que **genera y verifica microservicios NestJS** con arquitectura **hexagonal**, contrato **JSON:API** y las **cabeceras de seguridad obligatorias**. Cualquier agente/IDE compatible (Kiro, Claude, Cursor, etc.) lo consume para crear servicios nuevos o refactorizar servicios existentes **apegados al estándar del área**, de forma agnóstica de dominio.
 
@@ -38,7 +38,7 @@ Servidor **MCP** (Model Context Protocol) del área Middleware que **genera y ve
 
 ## Descripción
 
-Este proyecto **no es un backend HTTP**: es un **servidor MCP sobre stdio** que escribe archivos directamente en un proyecto NestJS destino (modo A, "escribe disco"). Su "API" son **15 herramientas** (tools) y **3 prompts** (flujos) que un agente invoca para:
+Este proyecto **no es un backend HTTP**: es un **servidor MCP sobre stdio** que escribe archivos directamente en un proyecto NestJS destino (modo A, "escribe disco"). Su "API" son **16 herramientas** (tools) y **3 prompts** (flujos) que un agente invoca para:
 
 - **Crear** un microservicio NestJS hexagonal nuevo (greenfield) completo y funcional.
 - **Refactorizar** un NestJS existente a arquitectura hexagonal, respetando su convención.
@@ -234,7 +234,7 @@ No pregunta la conexión, los números de error, CORS, los límites de peticione
 ### Memoria por repo y agentes
 - `record_architecture`: inventario `docs/architecture-inventory.json` (una entrada por módulo, **sin tocar las de otros**) + auditoría `docs/audits/<module>-<fecha>.md`.
 - `get_learnings` / `record_decision`: memoria **consultiva** por repo (prefijos, conexiones, decisión de autorización, errores que se repiten); nunca cambia las reglas base.
-- **Kit de agentes** (`middleware-generator`, `middleware-gen-worker`, `middleware-auditor`): se instala solo la primera vez que una herramienta trabaja sobre un repo (ver más abajo). El agente prepara el entorno: corre `npm install`, crea el `.env` con los valores que le da el usuario y no repite contraseñas.
+- **Kit de agentes** (`middleware-generator` y 4 sub-agentes con emoji y modelo propio, ver [Equipo de agentes](#equipo-de-agentes)): se instala solo la primera vez que una herramienta trabaja sobre un repo (ver más abajo). El agente prepara el entorno: corre `npm install`, crea el `.env` con los valores que le da el usuario y no repite contraseñas.
 
 ---
 
@@ -292,12 +292,33 @@ No hace falta pedir `install_agentic_kit`. La primera herramienta que trabaja so
 
 | Situación del repo | Qué hace el MCP |
 |---|---|
-| No tiene el kit | Lo instala: `.kiro/agents/middleware-generator.md`, `middleware-gen-worker.md`, `middleware-auditor.md`, `agentic/templates/`, la sección del MCP en `AGENTS.md` y el bloque de decisiones (ver abajo). Avisa qué agente seleccionar. **Si la herramienta que lo disparó genera algo** (`scaffold_service`, `add_use_case`, `add_authorization`, `generate_from_spec`), en esa primera llamada **no genera nada**: instala, avisa y espera a que el usuario elija el agente y repita su pedido. |
-| Tiene el kit de una versión anterior | Lo actualiza y conserva los modelos que el equipo haya puesto en los agentes. |
+| No tiene el kit | Lo instala: los 5 agentes de `.kiro/agents/` (`middleware-generator` y su equipo), `agentic/templates/`, la sección del MCP en `AGENTS.md` y el bloque de decisiones (ver abajo). Avisa qué agente seleccionar. **Si la herramienta que lo disparó genera algo** (`scaffold_service`, `add_use_case`, `add_authorization`, `generate_from_spec`), en esa primera llamada **no genera nada**: instala, avisa y espera a que el usuario elija el agente y repita su pedido. |
+| Tiene el kit de una versión anterior | Lo actualiza, conserva los modelos que el equipo haya puesto en los agentes y **borra los agentes y el workflow de versiones anteriores que este MCP instaló y ya no existen** (`middleware-onboarding`, `-architect`, `-backend`, `-fixer`, `-reviewer`, `-secrets`, `-dbre` y `middleware-parallel-review.workflow.yaml`). Solo borra archivos con la marca `managed by midd-nestjs-hexagonal-architecture-mcp`: uno sin la marca es del equipo y no se toca. |
 | Ya está al día (o es un `generate_from_spec` con `dryRun=true`, que solo planifica) | No escribe nada. `scaffold_service` e `inspect_project` solo recuerdan qué agente usar. |
-| Hay un agente con esos nombres que no instaló este MCP | No toca nada y lo dice (los tres agentes van como conjunto). Para reemplazarlos: `install_agentic_kit` con `overwrite=true`. |
+| Hay un agente con esos nombres que no instaló este MCP | No toca nada y lo dice (los agentes del equipo van como conjunto). Para reemplazarlos: `install_agentic_kit` con `overwrite=true`. |
 
 **El agente del chat no lo puede fijar un MCP.** Kiro lo elige en el selector de agentes de la barra del chat (junto al selector de modelo); el agente aparece ahí al guardarse el archivo, y si no se ve hay que recargar la ventana. Según el changelog de Kiro IDE 1.0, ese mismo selector permite dejar un agente preferido que persiste entre reinicios. Un chat que ya empezó con el agente por defecto sigue con él hasta que se cambie.
+
+### Equipo de agentes
+
+`middleware-generator` es el único agente que se selecciona. Es el orquestador: genera, reparte el trabajo y cierra. Para lo que no sea
+generar un módulo directo, propone el equipo y espera aprobación antes de delegar (con `subagent`, o con los workflows de Kiro si el entorno
+expone `run_workflow`). Cada agente tiene un emoji para que se vea quién trabaja, y un modelo con respaldo (`Auto` siempre al final).
+
+| Agente | Para qué | Modelo | Respaldo |
+|---|---|---|---|
+| 🧱 `middleware-generator` | Pregunta, arma el spec, genera, delega y cierra | `claude-sonnet-4.5` | `Auto` |
+| ⚙ `middleware-gen-worker` | Completa el andamiaje desde el spec y corrige bugs acotados con el diff mínimo | `claude-haiku-4.5` | `qwen3-coder-next`, `minimax-m2.5` |
+| 🔎 `middleware-auditor` | Valida estándares, build y tests; revisa diffs y PRs (modo diff, solo lectura) | `claude-opus-4.5` | `claude-sonnet-4.5` |
+| 🛡 `middleware-appsec` | Seguridad del código y secretos (solo lectura) | `claude-opus-4.5` | `claude-sonnet-4.5` |
+| 🧪 `middleware-tester` | Pruebas unitarias jest deterministas, **solo si las pides o las aceptas** (solo toca `*.spec.ts`) | `claude-sonnet-4.5` | `claude-haiku-4.5` |
+
+El tester nunca entra por su cuenta: con el módulo ya en verde, el orquestador pregunta una vez "¿quieres que escriba las pruebas unitarias?" y solo lo lanza con un sí (o si lo pediste desde el principio).
+El diseño de casos complejos, el mapa de un repo ajeno y el plan de refactor los hace el propio orquestador con `inspect_project` y `get_rules`; no hay agentes para eso.
+Criterio de modelos: barato para leer y completar, balanceado para el trabajo diario, el más capaz donde un error cuesta caro (auditoría,
+seguridad). El registro vive en `AGENT_REGISTRY` (`src/lib/agenticKit.ts`) y de ahí salen los archivos, los emojis, la tabla del
+orquestador y los modelos. Se cambian con el parámetro `models` de `install_agentic_kit` (claves: `orchestrator`, `worker`, `auditor`,
+`appsec`, `tester`), no editando el `.md`.
 
 ### Decisiones a la vista en `AGENTS.md`
 

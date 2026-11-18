@@ -1,5 +1,5 @@
 import { z } from 'zod'
-import { installAgenticKit, resolveModels, type KitStatus } from '../lib/agenticKit.js'
+import { AGENT_REGISTRY, AGENT_ROLES, installAgenticKit, resolveModels, type KitStatus, type ModelOverrides } from '../lib/agenticKit.js'
 import { mcpVersion } from '../lib/inventory.js'
 import { START_GUIDE, GREENFIELD_GUIDE, REFACTOR_GUIDE } from '../prompts.js'
 import * as s from '../lib/schemas.js'
@@ -16,16 +16,22 @@ const modelId = z
 export const installAgenticKitSchema = {
   projectRoot: s.projectRoot,
   models: z
-    .object({
-      orchestrator: modelId.describe('Modelo del agente middleware-generator. Default: claude-sonnet-4.5.'),
-      worker: modelId.describe('Modelo del worker (barato, trabajo mecanico). Default: claude-haiku-4.5.'),
-      auditor: modelId.describe('Modelo del auditor (el mas capaz). Default: claude-opus-4.5.')
-    })
+    .object(
+      Object.fromEntries(
+        AGENT_ROLES.map((role) => [
+          role,
+          modelId.describe(
+            `Modelo de ${AGENT_REGISTRY[role].name}. Default: ${AGENT_REGISTRY[role].model}.`
+          )
+        ])
+      ) as Record<(typeof AGENT_ROLES)[number], typeof modelId>
+    )
     .optional()
     .describe(
-      'Sobrescribe el modelo de cada agente. Los defaults son los del kit de lib-midd-mcp-architecture. Como volver a instalar reemplaza los archivos, usa este parametro para cambiar un modelo en vez de editar el .md a mano.'
-    ),
-  overwrite: z
+      'Sobrescribe el modelo de cada agente del equipo (claves: ' +
+        AGENT_ROLES.join(', ') +
+        '). Los defaults de orchestrator, worker y auditor son los del kit de lib-midd-mcp-architecture. Como volver a instalar reemplaza los archivos, usa este parametro para cambiar un modelo en vez de editar el .md a mano.'
+    ),  overwrite: z
     .boolean()
     .default(false)
     .describe(
@@ -37,6 +43,7 @@ const STATUS_LABEL: Record<KitStatus, string> = {
   created: 'created',
   updated: 'updated',
   unchanged: 'unchanged',
+  removed: 'removed (obsolete file from an earlier version of the kit)',
   'skipped-not-managed': 'SKIPPED (exists and was not installed by this MCP; use overwrite=true to replace it)',
   'skipped-broken-markers':
     'SKIPPED (the BEGIN/END markers of the MCP block are unbalanced: fix them by hand or delete the leftover marker)'
@@ -45,7 +52,7 @@ const STATUS_LABEL: Record<KitStatus, string> = {
 export async function installAgenticKitTool(args: {
   projectRoot: string
   overwrite: boolean
-  models?: { orchestrator?: string; worker?: string; auditor?: string }
+  models?: ModelOverrides
 }) {
   let results
   try {
@@ -61,15 +68,15 @@ export async function installAgenticKitTool(args: {
     '',
     ...results.map((r) => `  ${r.path}: ${STATUS_LABEL[r.status]}`),
     '',
-    `Models: middleware-generator=${models.orchestrator.model} | middleware-gen-worker=${models.worker.model} | middleware-auditor=${models.auditor.model}`,
+    `Models: ${AGENT_ROLES.map((role) => `${AGENT_REGISTRY[role].name}=${models[role].model}`).join(' | ')}`,
     '',
     skipped.length
-      ? 'Some files were NOT installed. Review the SKIPPED entries above. The three agents work as a set: ' +
+      ? 'Some files were NOT installed. Review the SKIPPED entries above. The agents of the team work as a set: ' +
         'if one of them belongs to another kit (for example lib-midd-mcp-architecture), the pipeline would mix ' +
         'instructions from two different MCPs. Install with overwrite=true to replace them as a set, or remove ' +
         'the other kit first.'
       : 'Done. Select middleware-generator in the agent selector of the chat input bar (Kiro IDE) or with /agent middleware-generator (Kiro CLI). ' +
-        'The worker and the auditor run behind the scenes; do not select them.',
+        'The rest of the team (' + AGENT_ROLES.filter((r) => r !== 'orchestrator').map((r) => `${AGENT_REGISTRY[r].emoji} ${AGENT_REGISTRY[r].name}`).join(', ') + ') run behind the scenes; do not select them.',
     'Re-run this tool after upgrading the MCP to refresh the installed files (it is idempotent).'
   ].join('\n')
 

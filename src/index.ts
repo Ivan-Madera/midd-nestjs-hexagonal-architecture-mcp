@@ -30,10 +30,11 @@ import {
 import { adoptSharedLayer, adoptSharedLayerSchema } from './tools/adoptShared.js'
 import { registerPrompts } from './prompts.js'
 import { withKit } from './tools/kit.js'
+import { mcpVersion } from './lib/inventory.js'
 
 const server = new McpServer({
   name: 'midd-nestjs-hexagonal-architecture-mcp',
-  version: '0.1.0'
+  version: mcpVersion()
 })
 
 // --- Flujos de trabajo (prompts MCP) ---------------------------------------
@@ -83,7 +84,7 @@ server.tool(
 // --- Capa agéntica mínima: punto de entrada igual para todos los repos ------
 server.tool(
   'install_agentic_kit',
-  'Instala (o actualiza) en el repo consumidor el punto de entrada del MCP: los agentes middleware-generator (el unico que se selecciona), middleware-gen-worker y middleware-auditor (.kiro/agents), la plantilla del middleware.spec.yaml (agentic/templates) y la sección del MCP en AGENTS.md (entre marcadores BEGIN/END; el resto del archivo no se toca). Idempotente: volver a correrla actualiza a la versión del MCP. Un archivo con el mismo nombre que no instaló este MCP se respeta salvo overwrite=true. Úsala cuando el usuario quiera dejar el repo listo para crear servicios con el MCP.',
+  'Instala (o actualiza) en el repo consumidor el punto de entrada del MCP: el equipo de agentes en .kiro/agents: middleware-generator (el unico que se selecciona) y sus sub-agentes middleware-gen-worker, middleware-auditor, middleware-appsec y middleware-tester, cada uno con su emoji y su modelo con respaldo, la plantilla del middleware.spec.yaml (agentic/templates) y la sección del MCP en AGENTS.md (entre marcadores BEGIN/END; el resto del archivo no se toca). Idempotente: volver a correrla actualiza a la versión del MCP y borra los agentes y el workflow de versiones anteriores que este MCP instaló y ya no existen. Un archivo con el mismo nombre que no instaló este MCP se respeta salvo overwrite=true. Úsala cuando el usuario quiera dejar el repo listo para crear servicios con el MCP.',
   installAgenticKitSchema,
   installAgenticKitTool
 )

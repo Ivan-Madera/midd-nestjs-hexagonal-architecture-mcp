@@ -8,7 +8,7 @@ import { parse as parseYaml } from 'yaml'
 import { Client } from '@modelcontextprotocol/sdk/client/index.js'
 import { StdioClientTransport } from '@modelcontextprotocol/sdk/client/stdio.js'
 
-import { installAgenticKit, AGENTS_BEGIN, AGENTS_END } from '../dist/lib/agenticKit.js'
+import { installAgenticKit, AGENTS_BEGIN, AGENTS_END, AGENT_REGISTRY } from '../dist/lib/agenticKit.js'
 import { installAgenticKitTool, getFlow } from '../dist/tools/agentic.js'
 import { generateFromSpec } from '../dist/tools/generateFromSpec.js'
 import { validateSpec } from '../dist/lib/spec.js'
@@ -17,10 +17,30 @@ import { START_GUIDE, GREENFIELD_GUIDE, REFACTOR_GUIDE } from '../dist/prompts.j
 
 const HERE = dirname(fileURLToPath(import.meta.url))
 const AGENT = '.kiro/agents/middleware-generator.md'
+// The orchestrator is listed with a plain-text star (U+2605, not an emoji) so it stands out; the other agents show their file name.
+const GENERATOR_DISPLAY_NAME = ' ★ middleware-generator'
 const WORKER = '.kiro/agents/middleware-gen-worker.md'
 const AUDITOR = '.kiro/agents/middleware-auditor.md'
 const SPEC_TEMPLATE = 'agentic/templates/middleware.spec.template.yaml'
-const ALL_FILES = [AGENT, WORKER, AUDITOR, SPEC_TEMPLATE, 'AGENTS.md']
+// The sub-agents the orchestrator delegates to besides the worker and the auditor, with the model and the emoji the kit gives each one.
+const SPECIALISTS = [
+  ['middleware-appsec', 'claude-opus-4.5', '🛡'],
+  ['middleware-tester', 'claude-sonnet-4.5', '🧪']
+]
+const SPECIALIST_FILES = SPECIALISTS.map(([name]) => `.kiro/agents/${name}.md`)
+// Agents and the workflow that an earlier kit installed and this one dropped (their work moved to the worker, the auditor and appsec).
+const OBSOLETE = [
+  '.kiro/agents/middleware-onboarding.md',
+  '.kiro/agents/middleware-architect.md',
+  '.kiro/agents/middleware-backend.md',
+  '.kiro/agents/middleware-fixer.md',
+  '.kiro/agents/middleware-reviewer.md',
+  '.kiro/agents/middleware-secrets.md',
+  '.kiro/agents/middleware-dbre.md',
+  '.kiro/workflows/middleware-parallel-review.workflow.yaml'
+]
+const ALL_FILES = [AGENT, WORKER, AUDITOR, ...SPECIALIST_FILES, SPEC_TEMPLATE, 'AGENTS.md']
+const FILE_COUNT = ALL_FILES.length
 const frontmatter = (text) => {
   assert.ok(text.startsWith('---\n'), 'frontmatter must be the first thing in the file')
   const end = text.indexOf('\n---\n', 4)
@@ -37,17 +57,17 @@ const write = (root, rel, text) => {
 const statuses = (results) => Object.fromEntries(results.map((r) => [r.path, r.status]))
 const cleanup = (root) => rmSync(root, { recursive: true, force: true })
 
-test('install on an empty repo creates the five files, stamped with the MCP version', () => {
+test('install on an empty repo creates every file, stamped with the MCP version', () => {
   const root = newRepo()
   try {
     const results = installAgenticKit({ projectRoot: root, overwrite: false })
-    assert.deepEqual(Object.values(statuses(results)), ['created', 'created', 'created', 'created', 'created'])
+    assert.deepEqual(Object.values(statuses(results)), Array(FILE_COUNT).fill('created'))
 
     const version = mcpVersion()
     for (const rel of ALL_FILES) {
       const text = read(root, rel)
       assert.ok(text.includes(version), `${rel} must carry the MCP version`)
-      assert.ok(!/__MCP_VERSION__|__MODEL_|__CHAIN_/.test(text), `${rel} has an unreplaced placeholder`)
+      assert.ok(!/__MCP_VERSION__|__MODEL_|__CHAIN_|__EMOJI__|__TEAM_TABLE__|__CLOSING__/.test(text), `${rel} has an unreplaced placeholder`)
     }
     assert.ok(read(root, 'AGENTS.md').startsWith(AGENTS_BEGIN))
     // the managed section is followed by the block of answers, which has its own markers and is never replaced
@@ -58,18 +78,19 @@ test('install on an empty repo creates the five files, stamped with the MCP vers
   }
 })
 
-test('the three installed agents are valid Kiro agent files with the colleague kit models', () => {
+test('the installed agents are valid Kiro agent files with the colleague kit models', () => {
   const root = newRepo()
   try {
     installAgenticKit({ projectRoot: root, overwrite: false })
     const expected = [
       [AGENT, 'middleware-generator', 'claude-sonnet-4.5'],
       [WORKER, 'middleware-gen-worker', 'claude-haiku-4.5'],
-      [AUDITOR, 'middleware-auditor', 'claude-opus-4.5']
+      [AUDITOR, 'middleware-auditor', 'claude-opus-4.5'],
+      ...SPECIALISTS.map(([name, model]) => [`.kiro/agents/${name}.md`, name, model])
     ]
     for (const [rel, name, model] of expected) {
       const { meta, body } = frontmatter(read(root, rel))
-      assert.equal(meta.name, name)
+      assert.equal(meta.name, rel === AGENT ? GENERATOR_DISPLAY_NAME : name)
       assert.equal(rel.endsWith(`/${name}.md`), true, 'the file name must match the agent name')
       assert.equal(meta.model, model)
       assert.ok(meta.tools.includes('@mcp'))
@@ -81,7 +102,7 @@ test('the three installed agents are valid Kiro agent files with the colleague k
   }
 })
 
-test('the pipeline is consistent across the three files', () => {
+test('the pipeline is consistent across the installed files', () => {
   const root = newRepo()
   try {
     installAgenticKit({ projectRoot: root, overwrite: false })
@@ -91,9 +112,16 @@ test('the pipeline is consistent across the three files', () => {
 
     // The orchestrator can launch exactly the sub-agents that are installed, and trusts them.
     assert.ok(orchestrator.tools.includes('subagent') && orchestrator.tools.includes('shell'))
-    const crew = orchestrator.toolsSettings.crew
-    assert.deepEqual([...crew.availableAgents].sort(), [auditor.name, worker.name].sort())
-    assert.deepEqual([...crew.trustedAgents].sort(), [...crew.availableAgents].sort())
+    // The delegation limit uses the documented keys: toolsSettings.subagent (CLI 2.x) and a subagent permission rule (V3 / IDE).
+    const team = [auditor.name, worker.name, ...SPECIALISTS.map(([name]) => name)].sort()
+    const delegation = orchestrator.toolsSettings.subagent
+    assert.ok(!orchestrator.toolsSettings.crew, 'the undocumented "crew" key must be gone')
+    assert.deepEqual([...delegation.availableAgents].sort(), team)
+    assert.deepEqual([...delegation.trustedAgents].sort(), team)
+    const rule = orchestrator.permissions.rules.find((r) => r.capability === 'subagent')
+    assert.equal(rule.effect, 'allow')
+    assert.deepEqual([...rule.match].sort(), team, 'only the team starts without a prompt, any other agent asks the user')
+    assert.ok(orchestrator.tools.includes('subagent'), 'delegation stays available even if the permission keys are ignored')
 
     // Sub-agents report with summary. Only the auditor needs a shell to build; the worker must not have one.
     assert.ok(worker.tools.includes('summary') && auditor.tools.includes('summary'))
@@ -140,7 +168,7 @@ test('models can be overridden without editing files by hand, and a reinstall ke
     // same override again: nothing changes
     assert.deepEqual(
       Object.values(statuses(installAgenticKit({ projectRoot: root, overwrite: false, models: { worker: 'claude-haiku-5.5' } }))),
-      ['unchanged', 'unchanged', 'unchanged', 'unchanged', 'unchanged']
+      Array(FILE_COUNT).fill('unchanged')
     )
     // back to defaults: the agent files are refreshed
     assert.equal(statuses(installAgenticKit({ projectRoot: root, overwrite: false }))[WORKER], 'updated')
@@ -204,7 +232,7 @@ test('install is idempotent: a second run changes nothing', () => {
     installAgenticKit({ projectRoot: root, overwrite: false })
     const before = ALL_FILES.map((f) => read(root, f))
     const second = installAgenticKit({ projectRoot: root, overwrite: false })
-    assert.deepEqual(Object.values(statuses(second)), ['unchanged', 'unchanged', 'unchanged', 'unchanged', 'unchanged'])
+    assert.deepEqual(Object.values(statuses(second)), Array(FILE_COUNT).fill('unchanged'))
     assert.deepEqual(ALL_FILES.map((f) => read(root, f)), before)
   } finally {
     cleanup(root)
@@ -411,7 +439,8 @@ test('MCP protocol: every tool the agent and AGENTS.md name is really registered
     }
 
     // Every snake_case word the kit puts in backticks that LOOKS like a tool must be a real one.
-    const specFields = new Set(['error_prefix', 'use_cases', 'resource_type', 'business_rules'])
+    // run_workflow and send_message are Kiro tools (workflows), not tools of this MCP; the orchestrator only uses it when the environment has it.
+    const specFields = new Set(['error_prefix', 'use_cases', 'resource_type', 'business_rules', 'run_workflow', 'send_message'])
     const toolLike = [...mentioned.matchAll(/`([a-z]+(?:_[a-z]+)+)`/g)].map((m) => m[1]).filter((n) => !specFields.has(n))
     for (const name of new Set(toolLike)) assert.ok(registered.has(name), `the kit names a tool that does not exist: ${name}`)
 
@@ -441,7 +470,7 @@ test('MCP protocol: the models parameter is advertised, validated by the schema,
     const tool = (await client.listTools()).tools.find((t) => t.name === 'install_agentic_kit')
     const models = tool.inputSchema.properties.models
     assert.ok(models, 'the tool must advertise a models parameter')
-    assert.deepEqual(Object.keys(models.properties).sort(), ['auditor', 'orchestrator', 'worker'])
+    assert.deepEqual(Object.keys(models.properties).sort(), ['appsec', 'auditor', 'orchestrator', 'tester', 'worker'])
     assert.ok(!(tool.inputSchema.required ?? []).includes('models'), 'models must be optional')
 
     const bad = await client
@@ -460,6 +489,188 @@ test('MCP protocol: the models parameter is advertised, validated by the schema,
     assert.equal(frontmatter(read(root, WORKER)).meta.model, 'claude-haiku-5.5')
   } finally {
     await client.close()
+    cleanup(root)
+  }
+})
+
+test('an update removes the agents and the workflow of earlier versions that this MCP installed, and only those', () => {
+  const root = newRepo()
+  try {
+    for (const rel of OBSOLETE) write(root, rel, `---\nname: old\n---\n<!-- managed by midd-nestjs-hexagonal-architecture-mcp v0.2.1 -->\n`)
+    // A file with the same name that the team wrote itself (no marker) is theirs.
+    write(root, OBSOLETE[0], '---\nname: middleware-onboarding\n---\nmine\n')
+    const results = installAgenticKit({ projectRoot: root, overwrite: false })
+    const state = statuses(results)
+    assert.ok(existsSync(join(root, OBSOLETE[0])), 'a file without the marker is never removed')
+    assert.equal(read(root, OBSOLETE[0]).includes('mine'), true)
+    for (const rel of OBSOLETE.slice(1)) {
+      assert.ok(!existsSync(join(root, rel)), `${rel} must be removed`)
+      assert.equal(state[rel], 'removed')
+    }
+    assert.ok(!(OBSOLETE[0] in state), 'a foreign file is not even listed')
+    // The second run has nothing left to remove.
+    assert.ok(!installAgenticKit({ projectRoot: root, overwrite: false }).some((r) => r.status === 'removed'))
+  } finally {
+    cleanup(root)
+  }
+})
+
+test('every agent closes the same way', () => {
+  const root = newRepo()
+  try {
+    installAgenticKit({ projectRoot: root, overwrite: false })
+    const sub = ALL_FILES.filter((f) => f.startsWith('.kiro/agents/') && f !== AGENT)
+    assert.equal(sub.length, 4)
+    for (const rel of sub) {
+      const { meta, body } = frontmatter(read(root, rel))
+      assert.match(body, /Cierre \(igual para todo el equipo\)/, `${rel} must carry the shared closing protocol`)
+      assert.ok(body.includes('`summary`') && body.includes('`send_message`'), `${rel}: summary for subagent, send_message inside a workflow`)
+      const emoji = Object.values(AGENT_REGISTRY).find((a) => a.name === meta.name).emoji
+      assert.ok(body.includes(`${emoji} ${meta.name}:`), `${rel} must open its report with its emoji and name`)
+      assert.ok(!/Llama `summary`/.test(body), `${rel} still tells the agent to call summary without the workflow case`)
+    }
+  } finally {
+    cleanup(root)
+  }
+})
+
+test('the pipeline puts the tester at the end, after the use case works, and says who fixes each failure', () => {
+  const root = newRepo()
+  try {
+    installAgenticKit({ projectRoot: root, overwrite: false })
+    const body = frontmatter(read(root, AGENT)).body
+
+    // Stages in order: complete -> audit -> build gate -> test -> final build gate.
+    const order = ['`complete`', '`audit`', '| 3 | BUILD GATE', '`test`', '| 5 | BUILD GATE final'].map((m) => body.indexOf(m))
+    assert.ok(order.every((i) => i >= 0), 'every stage must be defined')
+    assert.deepEqual([...order].sort((a, b) => a - b), order, 'the stages must be listed in order')
+    assert.match(body, /Primero tiene que funcionar el caso de uso/)
+    assert.match(body, /El tester va al final y solo con permiso/)
+    assert.match(body, /Nunca lo lances por tu cuenta, ni siquiera porque el spec traiga reglas de negocio/)
+    assert.match(read(root, '.kiro/agents/middleware-tester.md'), /solo con permiso explicito/)
+
+    // Ownership of a failure is explicit, with the tester not touching production code.
+    const table = body.slice(body.indexOf('### Quien arregla un fallo'), body.indexOf('### Procedimiento'))
+    for (const row of ['la prueba** esta mal', 'el codigo** no cumple el spec', 'No queda claro quien tiene la razon']) {
+      assert.ok(table.includes(row), `missing row: ${row}`)
+    }
+    assert.match(read(root, '.kiro/agents/middleware-tester.md'), /NO la cambies para que pase y no toques el codigo/)
+
+    // The build gate closes every sequence that changes files.
+    const sequences = body.slice(body.indexOf('### Que equipo segun la tarea'), body.indexOf('### Quien arregla un fallo'))
+    for (const line of sequences.split('\n').filter((l) => /worker|tester/.test(l) && l.startsWith('| ') && !l.includes('Tarea del usuario'))) {
+      assert.ok(line.includes('BUILD GATE'), `a sequence that changes files must end in BUILD GATE: ${line.slice(0, 70)}`)
+    }
+  } finally {
+    cleanup(root)
+  }
+})
+
+test('write scopes match the tools: only the owners write and the security review runs read-only', () => {
+  const root = newRepo()
+  try {
+    installAgenticKit({ projectRoot: root, overwrite: false })
+    // appsec reports and never writes: secrets are reviewed by it, not edited.
+    const appsec = frontmatter(read(root, '.kiro/agents/middleware-appsec.md'))
+    assert.ok(!appsec.meta.tools.includes('write'), 'middleware-appsec must be read-only')
+    assert.match(appsec.body, /Secretos/)
+    assert.match(appsec.body, /Nunca imprimas, copies ni registres un valor secreto/)
+    assert.match(frontmatter(read(root, '.kiro/agents/middleware-tester.md')).body, /Solo escribes archivos `\*\.spec\.ts`/)
+    // The worker also fixes a bug with the minimum diff; the auditor reviews a diff without writing anything.
+    assert.match(frontmatter(read(root, WORKER)).body, /Modo correccion/)
+    const auditor = frontmatter(read(root, AUDITOR)).body
+    assert.match(auditor, /Modo diff/)
+    assert.match(auditor, /No escribes nada: ni `record_architecture`/)
+    const orchestrator = frontmatter(read(root, AGENT)).body
+    assert.match(orchestrator, /En paralelo solo van agentes que \*\*no escriben\*\*/)
+  } finally {
+    cleanup(root)
+  }
+})
+test('the orchestrator only delegates to its own team and keeps working when parallel or background are not possible', () => {
+  const root = newRepo()
+  try {
+    installAgenticKit({ projectRoot: root, overwrite: false })
+    const body = frontmatter(read(root, AGENT)).body
+    assert.match(body, /Solo delegas en estos agentes `middleware-\*`/)
+    assert.match(body, /Nada depende del segundo plano ni del paralelo/)
+    assert.match(body, /corre uno tras otro/)
+    assert.ok(!/__SUBAGENT_/.test(read(root, AGENT)), 'no unreplaced delegation placeholder')
+  } finally {
+    cleanup(root)
+  }
+})
+
+test('sub-agents are launched only when they are needed, the skip rules are explicit and the cost is shown', () => {
+  const root = newRepo()
+  try {
+    installAgenticKit({ projectRoot: root, overwrite: false })
+    const body = frontmatter(read(root, AGENT)).body
+
+    // Necessity rule before any sub-agent.
+    assert.match(body, /Regla de necesidad/)
+    assert.match(body, /que aporta que yo no pueda hacer aqui y ahora/)
+    assert.match(body, /menor numero\*\* de agentes/)
+
+    // Worker and auditor are conditional, with the conditions spelled out.
+    const skip = body.slice(body.indexOf('### Cuando saltar etapas'), body.indexOf('### Loop de correccion'))
+    assert.ok(skip.length > 200, 'the skip section must exist before the correction loop')
+    for (const condition of ['TODO(midd)', 'business_rules', 'falta el esquema', '`sp` ni `http`', 'refactor', 'AUTHORIZATION: required']) {
+      assert.ok(skip.includes(condition), `missing skip condition: ${condition}`)
+    }
+    assert.match(skip, /record_architecture/)
+    assert.match(skip, /Ante la duda, el camino completo/)
+    assert.match(skip, /no se salta para ahorrar si hay reglas de negocio, SP, API externa, autorizacion o refactor/)
+
+    // The cost is visible: in the team proposal, in the spec plan and in the final report.
+    assert.match(body, /Costo: <N sub-agentes/)
+    assert.match(body, /Equipo previsto/)
+    assert.match(body, /Equipo que corrio y omitidos/)
+
+    // The pipeline table marks stages 1 and 2 as conditional, and nothing still calls the pipeline fixed.
+    assert.match(body, /\| 1 \| `complete`[^\n]*hay algo que completar/)
+    assert.match(body, /\| 2 \| `audit`[^\n]*el modulo no es simple/)
+    assert.ok(!/pipeline de abajo es fijo/.test(body))
+    assert.match(frontmatter(read(root, '.kiro/agents/middleware-auditor.md')).body, /o directamente, si no hubo nada que completar/)
+  } finally {
+    cleanup(root)
+  }
+})
+
+test('the agent frontmatter is plain text so Kiro can list and select the agents; emojis live in the welcome message and the body', () => {
+  const root = newRepo()
+  try {
+    installAgenticKit({ projectRoot: root, overwrite: false })
+    const nonAscii = /[^\x00-\x7F]/
+    const agents = ALL_FILES.filter((f) => f.startsWith('.kiro/agents/'))
+    assert.equal(agents.length, 5)
+    for (const rel of agents) {
+      const text = read(root, rel)
+      const raw = text.slice(4, text.indexOf('\n---\n', 4))
+      const { meta, body } = frontmatter(text)
+      // Only the welcome message of the orchestrator may carry emojis inside the frontmatter, as it always did.
+      const noWelcome = raw.replace(/welcomeMessage:[\s\S]*$/, '')
+      const withoutWelcome = rel === AGENT ? noWelcome.replace(/^name: .*$/m, '') : noWelcome
+      assert.ok(!nonAscii.test(withoutWelcome), `${rel}: the frontmatter outside welcomeMessage (and the orchestrator's star) must be ASCII`)
+      assert.ok(!nonAscii.test(meta.description), `${rel}: no emoji in the description`)
+      if (rel === AGENT) {
+        assert.ok(!meta.description.includes('[INTERNO]'), 'the orchestrator is the one agent the user selects')
+        assert.equal(meta.name, GENERATOR_DISPLAY_NAME, 'the orchestrator stands out in the picker with a text star in its name')
+        assert.ok(/^\u2605 /.test(meta.name.trim()) && !/\p{Extended_Pictographic}/u.test(meta.name), 'the star is a plain symbol, not an emoji')
+        assert.ok(meta.welcomeMessage.includes('🧱'), 'the orchestrator greets with its emoji')
+      } else {
+        assert.ok(meta.description.startsWith('[INTERNO]'), `${rel}: every sub-agent is marked [INTERNO]`)
+        assert.ok(!meta.welcomeMessage, `${rel}: sub-agents do not greet`)
+      }
+      // The emoji still shows when the agent speaks: in its closing protocol (and the orchestrator in its questions and team table).
+      if (rel !== AGENT) assert.ok(nonAscii.test(body), `${rel}: the body must tell the agent to open its report with its emoji`)
+    }
+    const orchestrator = read(root, AGENT)
+    for (const [, name, , emoji] of SPECIALISTS.map(([n, m, e]) => [0, n, m, e])) {
+      assert.ok(orchestrator.includes(emoji), `the team table shows the emoji of ${name}`)
+    }
+    assert.match(frontmatter(orchestrator).body, /muestra esta tabla con los emojis/)
+  } finally {
     cleanup(root)
   }
 })

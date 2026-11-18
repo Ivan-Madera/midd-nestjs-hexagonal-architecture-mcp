@@ -1,5 +1,5 @@
 import { existsSync } from 'node:fs'
-import { autoKitEnabled, ensureAgenticKit, type KitEnsureResult } from '../lib/agenticKit.js'
+import { AGENT_REGISTRY, AGENT_ROLES, autoKitEnabled, ensureAgenticKit, type KitEnsureResult } from '../lib/agenticKit.js'
 
 /**
  * Automatic installation of the agentic kit.
@@ -36,8 +36,11 @@ export function kitNotice(result: KitEnsureResult, projectRoot: string, entry: b
     case 'updated':
       return [
         `KIT DEL MCP ${result.state === 'installed' ? 'INSTALADO' : 'ACTUALIZADO'} automaticamente en ${projectRoot}:`,
-        '  - .kiro/agents/middleware-generator.md, middleware-gen-worker.md y middleware-auditor.md',
+        `  - .kiro/agents/: ${AGENT_ROLES.map((role) => `${AGENT_REGISTRY[role].emoji} ${AGENT_REGISTRY[role].name}`).join(', ')}`,
         '  - agentic/templates/middleware.spec.template.yaml y la seccion del MCP en AGENTS.md',
+        ...(result.files.some((f) => f.status === 'removed')
+          ? [`  - Borrados (de una version anterior del kit, ya no existen): ${result.files.filter((f) => f.status === 'removed').map((f) => f.path).join(', ')}`]
+          : []),
         ...PICK_THE_AGENT
       ].join('\n')
     case 'present':
@@ -47,7 +50,7 @@ export function kitNotice(result: KitEnsureResult, projectRoot: string, entry: b
     case 'foreign':
       return [
         `KIT DEL MCP NO instalado: ya hay agentes en .kiro/agents con esos nombres que no instalo este MCP (${result.files.map((f) => f.path).join(', ')}).`,
-        'Los tres agentes trabajan como un conjunto y no se mezclan con los de otro kit. Para reemplazarlos como conjunto usa',
+        'Los agentes del equipo trabajan como un conjunto y no se mezclan con los de otro kit. Para reemplazarlos como conjunto usa',
         'install_agentic_kit con overwrite=true, o quita el otro kit primero.'
       ].join('\n')
     case 'failed':

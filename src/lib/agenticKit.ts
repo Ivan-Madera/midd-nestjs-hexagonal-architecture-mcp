@@ -1,4 +1,4 @@
-import { existsSync, mkdirSync, readFileSync, writeFileSync } from 'node:fs'
+import { existsSync, mkdirSync, readFileSync, unlinkSync, writeFileSync } from 'node:fs'
 import { dirname, join } from 'node:path'
 import { readTemplate } from './dataset.js'
 import { mcpVersion } from './inventory.js'
@@ -25,6 +25,7 @@ export type KitStatus =
   | 'created'
   | 'updated'
   | 'unchanged'
+  | 'removed'
   | 'skipped-not-managed'
   | 'skipped-broken-markers'
 
@@ -101,27 +102,60 @@ export function upsertAgentsSection(projectRoot: string, section: string): KitFi
   return { path: relativePath, status: 'updated' }
 }
 
-export type AgentRole = 'orchestrator' | 'worker' | 'auditor'
+/**
+ * The team. `middleware-generator` is the only agent the user selects; the rest are sub-agents it delegates to.
+ * One registry drives the file names, the emoji (so the user can tell who is working), the models and the table
+ * that the orchestrator prints, so the four never drift apart.
+ */
+export const AGENT_REGISTRY = {
+  orchestrator: {
+    name: 'middleware-generator', emoji: '🧱', template: 'agentic/middleware-generator.md',
+    model: 'claude-sonnet-4.5', fallbacks: [] as string[],
+    when: 'Unico que se selecciona: pregunta, arma el spec, genera, reparte el trabajo y cierra'
+  },
+  worker: {
+    name: 'middleware-gen-worker', emoji: '⚙️', template: 'agentic/middleware-gen-worker.md',
+    model: 'claude-haiku-4.5', fallbacks: ['qwen3-coder-next', 'minimax-m2.5'],
+    when: 'Completa el andamiaje desde el spec y corrige bugs acotados con el diff minimo (trabajo mecanico)'
+  },
+  auditor: {
+    name: 'middleware-auditor', emoji: '🔎', template: 'agentic/middleware-auditor.md',
+    model: 'claude-opus-4.5', fallbacks: ['claude-sonnet-4.5'],
+    when: 'Valida estandares, build y tests; deja auditoria e inventario; revisa diffs y PRs (modo diff, solo lectura)'
+  },
+  appsec: {
+    name: 'middleware-appsec', emoji: '🛡️', template: 'agentic/middleware-appsec.md',
+    model: 'claude-opus-4.5', fallbacks: ['claude-sonnet-4.5'],
+    when: 'Revision de seguridad del codigo y de secretos (solo lectura)'
+  },
+  tester: {
+    name: 'middleware-tester', emoji: '🧪', template: 'agentic/middleware-tester.md',
+    model: 'claude-sonnet-4.5', fallbacks: ['claude-haiku-4.5'],
+    when: 'Pruebas unitarias jest deterministas, solo si el usuario las pide o las acepta (solo toca archivos .spec.ts)'
+  }
+} as const
+
+export type AgentRole = keyof typeof AGENT_REGISTRY
+export const AGENT_ROLES = Object.keys(AGENT_REGISTRY) as AgentRole[]
 export type ModelOverrides = Partial<Record<AgentRole, string>>
 
 /**
- * Default models and fallback chains, kept identical to the ones the sibling
- * lib-midd-mcp-architecture kit uses so both kits behave the same way:
- * orchestrator = balanced, worker = cheap (mechanical work), auditor = most capable.
+ * Default models and fallback chains. The first three are identical to the ones the sibling
+ * lib-midd-mcp-architecture kit uses: orchestrator = balanced, worker = cheap (mechanical work),
+ * auditor = most capable. appsec follows the same idea (most capable where a mistake is expensive) and the
+ * tester is balanced.
  * `Auto` is always the last resort so a renamed model never breaks the flow.
  */
-export const DEFAULT_MODELS: Record<AgentRole, { model: string; fallbacks: string[] }> = {
-  orchestrator: { model: 'claude-sonnet-4.5', fallbacks: [] },
-  worker: { model: 'claude-haiku-4.5', fallbacks: ['qwen3-coder-next', 'minimax-m2.5'] },
-  auditor: { model: 'claude-opus-4.5', fallbacks: ['claude-sonnet-4.5'] }
-}
+export const DEFAULT_MODELS: Record<AgentRole, { model: string; fallbacks: string[] }> = Object.fromEntries(
+  AGENT_ROLES.map((role) => [role, { model: AGENT_REGISTRY[role].model, fallbacks: [...AGENT_REGISTRY[role].fallbacks] }])
+) as Record<AgentRole, { model: string; fallbacks: string[] }>
 
 // The value lands inside the YAML frontmatter of an agent file: it must be a plain model id.
 const MODEL_ID = /^[A-Za-z0-9][A-Za-z0-9._:-]{0,63}$/
 
 export function resolveModels(overrides: ModelOverrides = {}): Record<AgentRole, { model: string; chain: string }> {
   const resolved = {} as Record<AgentRole, { model: string; chain: string }>
-  for (const role of Object.keys(DEFAULT_MODELS) as AgentRole[]) {
+  for (const role of AGENT_ROLES) {
     const override = overrides[role]?.trim()
     if (override !== undefined && override !== '' && !MODEL_ID.test(override)) {
       throw new Error(
@@ -137,20 +171,81 @@ export function resolveModels(overrides: ModelOverrides = {}): Record<AgentRole,
   return resolved
 }
 
-const applyModels = (text: string, models: ReturnType<typeof resolveModels>): string =>
-  text
-    .replaceAll('__MODEL_ORCHESTRATOR__', models.orchestrator.model)
-    .replaceAll('__MODEL_WORKER__', models.worker.model)
-    .replaceAll('__MODEL_AUDITOR__', models.auditor.model)
-    .replaceAll('__CHAIN_ORCHESTRATOR__', models.orchestrator.chain)
-    .replaceAll('__CHAIN_WORKER__', models.worker.chain)
-    .replaceAll('__CHAIN_AUDITOR__', models.auditor.chain)
+const teamTable = (models: ReturnType<typeof resolveModels>): string =>
+  [
+    '| Agente | Cuando | Modelo (con respaldo) |',
+    '|---|---|---|',
+    ...AGENT_ROLES.filter((role) => role !== 'orchestrator').map(
+      (role) => `| ${AGENT_REGISTRY[role].emoji} \`${AGENT_REGISTRY[role].name}\` | ${AGENT_REGISTRY[role].when} | ${models[role].chain} |`
+    )
+  ].join('\n')
 
-export const AGENT_FILES = [
-  { template: 'agentic/middleware-generator.md', target: '.kiro/agents/middleware-generator.md' },
-  { template: 'agentic/middleware-gen-worker.md', target: '.kiro/agents/middleware-gen-worker.md' },
-  { template: 'agentic/middleware-auditor.md', target: '.kiro/agents/middleware-auditor.md' }
+/**
+ * One closing protocol for the whole team, so no agent receives two different instructions. A sub-agent launched with
+ * `subagent` reports with `summary`; the same agent running inside a workflow reports with `send_message`, which Kiro
+ * wires into every workflow step.
+ */
+const closing = (role: AgentRole): string =>
+  `**Cierre (igual para todo el equipo).** Entrega tu reporte como respuesta final, abriendo con \`${AGENT_REGISTRY[role].emoji} ${AGENT_REGISTRY[role].name}:\`. ` +
+  'Si te lanzaron con `subagent`, llama `summary` con ese reporte. Si corres dentro de un workflow, cierra con `send_message`: ' +
+  'severity `success` al terminar, `warning` si necesitas una decision del usuario y `error` si no pudiste completar la tarea.'
+
+/** The agents the orchestrator may start: the team in the registry, and nobody else. One source for every list in its frontmatter. */
+const SUBAGENT_NAMES = AGENT_ROLES.filter((role) => role !== 'orchestrator').map((role) => AGENT_REGISTRY[role].name)
+const subagentList = SUBAGENT_NAMES.map((name) => `      - ${name}`).join('\n')
+const subagentArray = `[${SUBAGENT_NAMES.map((name) => `"${name}"`).join(', ')}]`
+
+const applyModels = (text: string, models: ReturnType<typeof resolveModels>, role: AgentRole): string => {
+  let out = text
+    .replaceAll('__SUBAGENT_LIST__', subagentList)
+    .replaceAll('__SUBAGENT_ARRAY__', subagentArray)
+    .replaceAll('__CLOSING__', closing(role))
+    .replaceAll('__EMOJI__', AGENT_REGISTRY[role].emoji)
+    .replaceAll('__TEAM_TABLE__', teamTable(models))
+  for (const r of AGENT_ROLES) {
+    out = out.replaceAll(`__MODEL_${r.toUpperCase()}__`, models[r].model).replaceAll(`__CHAIN_${r.toUpperCase()}__`, models[r].chain)
+  }
+  return out
+}
+
+export const AGENT_FILES = AGENT_ROLES.map((role) => ({
+  role,
+  template: AGENT_REGISTRY[role].template,
+  target: `.kiro/agents/${AGENT_REGISTRY[role].name}.md`
+}))
+
+/**
+ * Files an earlier version of the kit installed and this one no longer ships: seven agents folded into the four of
+ * the team (their work moved to the worker, the auditor and appsec) and the parallel-review workflow that called them.
+ * They are removed from a consuming repo only if they still carry MANAGED_MARKER; a file the team wrote or edited
+ * to take ownership of (no marker) is never touched.
+ */
+export const OBSOLETE_KIT_FILES = [
+  '.kiro/agents/middleware-onboarding.md',
+  '.kiro/agents/middleware-architect.md',
+  '.kiro/agents/middleware-backend.md',
+  '.kiro/agents/middleware-fixer.md',
+  '.kiro/agents/middleware-reviewer.md',
+  '.kiro/agents/middleware-secrets.md',
+  '.kiro/agents/middleware-dbre.md',
+  '.kiro/workflows/middleware-parallel-review.workflow.yaml'
 ] as const
+
+const isManagedFile = (fullPath: string): boolean => readFileSync(fullPath, 'utf8').includes(MANAGED_MARKER)
+
+/** Obsolete kit files that are still in the repo and that this MCP installed (so it may remove them). */
+const obsoleteManagedFiles = (projectRoot: string): string[] =>
+  OBSOLETE_KIT_FILES.filter((relativePath) => {
+    const full = join(projectRoot, relativePath)
+    return existsSync(full) && isManagedFile(full)
+  })
+
+function removeObsoleteKitFiles(projectRoot: string): KitFileResult[] {
+  return obsoleteManagedFiles(projectRoot).map((relativePath) => {
+    unlinkSync(join(projectRoot, relativePath))
+    return { path: relativePath, status: 'removed' as const }
+  })
+}
 
 export function installAgenticKit(opts: {
   projectRoot: string
@@ -164,7 +259,7 @@ export function installAgenticKit(opts: {
       installManagedFile({
         projectRoot: opts.projectRoot,
         relativePath: file.target,
-        content: applyModels(withVersion(readTemplate(file.template), version), models),
+        content: applyModels(withVersion(readTemplate(file.template), version), models, file.role),
         overwrite: opts.overwrite
       })
     ),
@@ -176,6 +271,7 @@ export function installAgenticKit(opts: {
       )}`,
       overwrite: opts.overwrite
     }),
+    ...removeObsoleteKitFiles(opts.projectRoot),
     upsertAgentsSection(opts.projectRoot, withVersion(readTemplate('agentic/AGENTS.section.md'), version))
   ]
   // The block of answers has its own markers: it is created once and its values are never touched afterwards.
@@ -198,11 +294,7 @@ export type KitEnsureResult = { state: KitEnsureState; files: KitFileResult[]; d
 const MANAGED_VERSION = /managed by midd-nestjs-hexagonal-architecture-mcp v(\S+)/
 const MODEL_LINE = /^model:\s*(\S+)\s*$/m
 
-const ROLE_OF_TARGET: Record<string, AgentRole> = {
-  '.kiro/agents/middleware-generator.md': 'orchestrator',
-  '.kiro/agents/middleware-gen-worker.md': 'worker',
-  '.kiro/agents/middleware-auditor.md': 'auditor'
-}
+const ROLE_OF_TARGET: Record<string, AgentRole> = Object.fromEntries(AGENT_FILES.map((f) => [f.target, f.role]))
 
 export { autoKitEnabled } from './kitSwitch.js'
 
@@ -222,7 +314,7 @@ export function ensureAgenticKit(projectRoot: string): KitEnsureResult {
       }
     })
 
-    // The three agents work as a set: a file from another kit with the same name is never mixed with ours.
+    // The agents of the team work as a set: a file from another kit with the same name is never mixed with ours.
     const foreign = existing.filter((e) => e.kind === 'foreign')
     if (foreign.length > 0) {
       return { state: 'foreign', files: foreign.map((f) => ({ path: f.target, status: 'skipped-not-managed' as const })) }
@@ -233,7 +325,9 @@ export function ensureAgenticKit(projectRoot: string): KitEnsureResult {
     const agentsSection = join(projectRoot, 'AGENTS.md')
     const agentsText = existsSync(agentsSection) ? readFileSync(agentsSection, 'utf8') : ''
     const hasSection = agentsText.includes(AGENTS_BEGIN) && agentsText.includes('<!-- BEGIN midd-nestjs-preferences')
-    if (missing.length === 0 && outdated.length === 0 && hasSection) return { state: 'present', files: [] }
+    // Agents and the workflow that an older kit installed and this one dropped: their presence also means the kit is updated.
+    const obsolete = obsoleteManagedFiles(projectRoot)
+    if (missing.length === 0 && outdated.length === 0 && hasSection && obsolete.length === 0) return { state: 'present', files: [] }
 
     // Keep the models the team chose (the version marker is what says a file is out of date, not its content).
     const models: ModelOverrides = {}
@@ -243,7 +337,7 @@ export function ensureAgenticKit(projectRoot: string): KitEnsureResult {
       }
     }
     const files = installAgenticKit({ projectRoot, overwrite: false, models })
-    const wroteAny = files.some((f) => f.status === 'created' || f.status === 'updated')
+    const wroteAny = files.some((f) => f.status === 'created' || f.status === 'updated' || f.status === 'removed')
     if (!wroteAny) return { state: 'present', files }
     return { state: missing.length === AGENT_FILES.length ? 'installed' : 'updated', files }
   } catch (err: any) {
