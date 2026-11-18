@@ -17,8 +17,6 @@ import { START_GUIDE, GREENFIELD_GUIDE, REFACTOR_GUIDE } from '../dist/prompts.j
 
 const HERE = dirname(fileURLToPath(import.meta.url))
 const AGENT = '.kiro/agents/middleware-generator.md'
-// The orchestrator is listed with a plain-text star (U+2605, not an emoji) so it stands out; the other agents show their file name.
-const GENERATOR_DISPLAY_NAME = ' ★ middleware-generator'
 const WORKER = '.kiro/agents/middleware-gen-worker.md'
 const AUDITOR = '.kiro/agents/middleware-auditor.md'
 const SPEC_TEMPLATE = 'agentic/templates/middleware.spec.template.yaml'
@@ -90,7 +88,7 @@ test('the installed agents are valid Kiro agent files with the colleague kit mod
     ]
     for (const [rel, name, model] of expected) {
       const { meta, body } = frontmatter(read(root, rel))
-      assert.equal(meta.name, rel === AGENT ? GENERATOR_DISPLAY_NAME : name)
+      assert.equal(meta.name, name)
       assert.equal(rel.endsWith(`/${name}.md`), true, 'the file name must match the agent name')
       assert.equal(meta.model, model)
       assert.ok(meta.tools.includes('@mcp'))
@@ -650,13 +648,11 @@ test('the agent frontmatter is plain text so Kiro can list and select the agents
       const { meta, body } = frontmatter(text)
       // Only the welcome message of the orchestrator may carry emojis inside the frontmatter, as it always did.
       const noWelcome = raw.replace(/welcomeMessage:[\s\S]*$/, '')
-      const withoutWelcome = rel === AGENT ? noWelcome.replace(/^name: .*$/m, '') : noWelcome
-      assert.ok(!nonAscii.test(withoutWelcome), `${rel}: the frontmatter outside welcomeMessage (and the orchestrator's star) must be ASCII`)
+            assert.ok(!nonAscii.test(noWelcome), `${rel}: the frontmatter outside welcomeMessage must be ASCII`)
       assert.ok(!nonAscii.test(meta.description), `${rel}: no emoji in the description`)
       if (rel === AGENT) {
         assert.ok(!meta.description.includes('[INTERNO]'), 'the orchestrator is the one agent the user selects')
-        assert.equal(meta.name, GENERATOR_DISPLAY_NAME, 'the orchestrator stands out in the picker with a text star in its name')
-        assert.ok(/^\u2605 /.test(meta.name.trim()) && !/\p{Extended_Pictographic}/u.test(meta.name), 'the star is a plain symbol, not an emoji')
+        assert.ok(meta.description.startsWith('[USAR ESTE]'), 'the orchestrator is marked [USAR ESTE], the sub-agents [INTERNO]')
         assert.ok(meta.welcomeMessage.includes('🧱'), 'the orchestrator greets with its emoji')
       } else {
         assert.ok(meta.description.startsWith('[INTERNO]'), `${rel}: every sub-agent is marked [INTERNO]`)

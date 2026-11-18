@@ -8,7 +8,7 @@
 ![stack](https://img.shields.io/badge/stack-Node.js%20%2B%20TypeScript-3178c6)
 ![protocol](https://img.shields.io/badge/protocol-Model%20Context%20Protocol-6E56CF)
 ![target](https://img.shields.io/badge/target-NestJS%20Hexagonal-E0234E)
-![version](https://img.shields.io/badge/version-0.3.0-green)
+![version](https://img.shields.io/badge/version-0.3.1-green)
 
 Servidor **MCP** (Model Context Protocol) del área Middleware que **genera y verifica microservicios NestJS** con arquitectura **hexagonal**, contrato **JSON:API** y las **cabeceras de seguridad obligatorias**. Cualquier agente/IDE compatible (Kiro, Claude, Cursor, etc.) lo consume para crear servicios nuevos o refactorizar servicios existentes **apegados al estándar del área**, de forma agnóstica de dominio.
 

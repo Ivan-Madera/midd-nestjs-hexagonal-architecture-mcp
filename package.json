@@ -1,6 +1,6 @@
 {
   "name": "midd-nestjs-hexagonal-architecture-mcp",
-  "version": "0.3.0",
+  "version": "0.3.1",
   "description": "Hybrid MCP server of the Middleware area: guides (agentic flow), generates (deterministic templates) and verifies (compliance) NestJS hexagonal microservices with JSON:API and the mandatory security baseline.",
   "license": "UNLICENSED",
   "type": "module",

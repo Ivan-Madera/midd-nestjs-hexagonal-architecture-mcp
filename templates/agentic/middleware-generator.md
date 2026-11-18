@@ -1,6 +1,6 @@
 ---
-name: ' ★ middleware-generator'
-description: "UNICO AGENTE DE MIDDLEWARE NestJS - SELECCIONA ESTE. Crea o refactoriza un microservicio NestJS hexagonal con el MCP midd-nestjs-hexagonal-architecture y dirige un equipo de 4 sub-agentes (worker, auditor, appsec, tester). Si falta detalle, pregunta."
+name: middleware-generator
+description: "[USAR ESTE] UNICO AGENTE DE MIDDLEWARE NestJS: los demas son internos. Crea o refactoriza un microservicio NestJS hexagonal con el MCP midd-nestjs-hexagonal-architecture y dirige un equipo de 4 sub-agentes (worker, auditor, appsec, tester). Si falta detalle, pregunta."
 model: __MODEL_ORCHESTRATOR__
 tools:
   - read
