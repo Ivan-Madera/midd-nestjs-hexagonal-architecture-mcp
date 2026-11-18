@@ -341,6 +341,10 @@ La causa principal estaba en el MCP, no en el agente:
 **No verificado:** un refactor completo con `adopt_shared_layer` sobre un proyecto real y con modelos reales; `patchEntry` sobre un
 `main.ts` muy distinto al de prueba (microservicios, Swagger, un `create` con opciones en varias líneas).
 
+## Skills dentro del MCP
+Las skills de cierre (auditoría de dependencias, atlas, README y corrección de vulnerabilidades) viajan en `templates/skills/` y el agente las lee con `get_skill`. Así todos usan la misma versión, el agente no lleva copias que se desincronicen y el texto solo entra al contexto cuando el usuario acepta esa skill.
+El orquestador las ofrece al final de la tarea (tras el BUILD GATE y el tester), una sola vez, de una en una y nunca en paralelo, con un resumen de una línea; la corrección de vulnerabilidades siempre va al final. Son una copia de las skills del equipo tomada como base, sin vínculo con la carpeta de skills de nadie: para cambiarlas se edita `templates/skills/` y se publica una versión nueva del MCP. No medido: el costo real en tokens de cada skill.
+
 ## Comentarios en el código generado
 Las plantillas venían de un dataset pensado para copiarse a mano y traían instrucciones ("si usas stored procedure, cambia este
 import", "borra el adapter que no uses") que el MCP ya resuelve solo: en el código final eran falsas. **Decisión:** el código generado

@@ -28,6 +28,7 @@ import {
   getRulesSchema
 } from './tools/support.js'
 import { adoptSharedLayer, adoptSharedLayerSchema } from './tools/adoptShared.js'
+import { getSkill, getSkillSchema } from './tools/skills.js'
 import { registerPrompts } from './prompts.js'
 import { withKit } from './tools/kit.js'
 import { mcpVersion } from './lib/inventory.js'
@@ -95,6 +96,13 @@ server.tool(
   getFlow
 )
 
+// --- Skills empaquetadas con el MCP (las lee el agente desde aqui) ----------
+server.tool(
+  'get_skill',
+  'Devuelve una skill empaquetada con el MCP (README, atlas, auditoria de dependencias, correccion de vulnerabilidades). Sin nombre devuelve la lista ordenada con un resumen de una linea de cada una: en ese orden las ofrece el agente, de una en una. Con nombre devuelve el SKILL.md (o un archivo adicional con file=). Es SOLO LECTURA: la skill se sigue paso a paso, con las confirmaciones que ella misma pide.',
+  getSkillSchema,
+  getSkill
+)
 // --- Autorización del borde HTTP (OPT-IN: el agente pregunta si se activa) ---
 server.tool(
   'add_authorization',

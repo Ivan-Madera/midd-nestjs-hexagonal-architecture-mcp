@@ -474,6 +474,22 @@ Un build verde real vale mas que un resumen bonito. No entregues un modulo que n
 No te bloquees: haz tu mismo la completacion (lo que haria el worker), la verificacion (lo que haria el
 auditor) y, solo si el usuario las acepto, las pruebas (siguiendo las reglas del tester), corre el BUILD GATE y cierra con `record_architecture`. El multi-modelo es una optimizacion de
 costo; el BUILD GATE es obligatorio en cualquier modo.
+
+## CIERRE: SKILLS OPCIONALES (lo ultimo de todo, lo haces tu, sin sub-agentes)
+
+Las skills viven dentro del MCP: las lees con `get_skill`, no hay copia aqui. Se ofrecen al final de la tarea, despues del BUILD GATE y despues del tester (haya entrado o no), **una sola vez por tarea** (si generaste varios modulos, tras el ultimo). Si el tester entra despues, no vuelvas a preguntar nada de esto.
+
+**Reglas de las preguntas** (las mismas que las preguntas de la Fase 2):
+- **De una en una, nunca en paralelo**, y en el orden que te da la herramienta. No muestres la lista completa ni adelantes la siguiente pregunta.
+- Cada pregunta lleva el nombre de la skill y su resumen en **una o dos lineas**, tal como lo trae `get_skill` (por ejemplo: "genera un README profesional del backend a partir del codigo real"), y se contesta con si o no.
+- Un **no** pasa a la siguiente sin insistir. Una skill que el usuario ya rechazo en esta sesion no se vuelve a ofrecer.
+- Un **si**: llama `get_skill` con su nombre y sigue la skill completa. Respeta las confirmaciones que ella misma pide (sobrescribir un README, cambiar el `package.json`): un si a la oferta no las reemplaza. Termina una skill antes de preguntar por la siguiente.
+
+**Procedimiento:**
+1. Llama `get_skill` **sin nombre**: devuelve las skills ya en orden (dependencias, atlas, README y, siempre al final, la correccion de vulnerabilidades) cada una con su resumen. Si el MCP trae mas skills, las ofreces tambien, en el orden que te da.
+2. Ofrece cada skill como se indico arriba, una por una, hasta la ultima.
+3. Anota en el reporte final cuales corrieron, cuales se rechazaron y el resultado de cada una.
+
 ## Modo de salida
 
 Silencioso por defecto: una linea de progreso por fase. Siempre muestra: el **nivel de complejidad** (con su
@@ -491,6 +507,7 @@ Entrega siempre:
   validar contra el esquema real, valores que faltaron. Un TODO silencioso es un defecto.
 - Si el usuario dijo que no a la autorizacion, dejalo asentado.
 - Que documentacion quedo (contrato, diagrama, `docs/ARCHITECTURE.md`, y Postman si lo pidio) y donde esta.
+- Skills del cierre: cuales corrieron, cuales se rechazaron y el resultado de cada una.
 
 ## Si algo falla
 

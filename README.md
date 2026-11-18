@@ -8,7 +8,7 @@
 ![stack](https://img.shields.io/badge/stack-Node.js%20%2B%20TypeScript-3178c6)
 ![protocol](https://img.shields.io/badge/protocol-Model%20Context%20Protocol-6E56CF)
 ![target](https://img.shields.io/badge/target-NestJS%20Hexagonal-E0234E)
-![version](https://img.shields.io/badge/version-0.3.1-green)
+![version](https://img.shields.io/badge/version-0.3.2-green)
 
 Servidor **MCP** (Model Context Protocol) del área Middleware que **genera y verifica microservicios NestJS** con arquitectura **hexagonal**, contrato **JSON:API** y las **cabeceras de seguridad obligatorias**. Cualquier agente/IDE compatible (Kiro, Claude, Cursor, etc.) lo consume para crear servicios nuevos o refactorizar servicios existentes **apegados al estándar del área**, de forma agnóstica de dominio.
 
@@ -274,7 +274,7 @@ Añade el servidor a la config MCP. Workspace: `.kiro/settings/mcp.json`. Usuari
       "command": "node",
       "args": ["C:/Propuestas/midd-nestjs-hexagonal-architecture-mcp/dist/index.js"],
       "disabled": false,
-      "autoApprove": ["get_rules", "get_flow", "get_learnings", "list_templates", "get_template", "inspect_project"]
+      "autoApprove": ["get_rules", "get_flow", "get_learnings", "list_templates", "get_template", "inspect_project", "get_skill"]
     }
   }
 }
@@ -456,6 +456,9 @@ Inspeccionar el dataset.
 - `list_templates` — **Input:** `subdir` (`shared`|`config`|`_domain-slice`|`all`).
 - `get_template` — **Input:** `relativePath`.
 
+### `get_skill`
+Skills empaquetadas en `templates/skills/` (dependencias, atlas, README y corrección de vulnerabilidades). El agente las lee desde el MCP, no lleva copia ni se instalan en el repo, y las ofrece al terminar la tarea de una en una, en ese orden, con un resumen de una línea. Para cambiar una se edita su archivo en `templates/skills/` y se publica una versión nueva del MCP.
+- **Input:** `name?`, `file?`. Sin `name` devuelve la lista ordenada con su resumen; con `name`, el `SKILL.md` (o un archivo adicional con `file`).
 ### Prompts (flujos guía)
 - `start` — desambigua greenfield vs refactor según el estado del workspace.
 - `scaffold_greenfield` — guía la creación de un servicio nuevo paso a paso.

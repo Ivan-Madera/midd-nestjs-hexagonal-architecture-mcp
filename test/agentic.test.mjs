@@ -426,7 +426,8 @@ test('MCP protocol: every tool the agent and AGENTS.md name is really registered
       'verify_standards',
       'record_architecture',
       'get_flow',
-      'install_agentic_kit'
+      'install_agentic_kit',
+      'get_skill'
     ]
     for (const name of expected) assert.ok(registered.has(name), `tool not registered: ${name}`)
 
@@ -564,6 +565,22 @@ test('the pipeline puts the tester at the end, after the use case works, and say
   }
 })
 
+test('the orchestrator offers the skills last, one at a time and in order, with a one-line summary', () => {
+  const root = mkdtempSync(join(tmpdir(), 'agentic-'))
+  try {
+    installAgenticKit({ projectRoot: root })
+    const body = read(root, AGENT)
+    const i = body.indexOf('## CIERRE: SKILLS OPCIONALES')
+    assert.ok(i > body.indexOf('## BUILD GATE'), 'the skills come after the build gate')
+    const cierre = body.slice(i, body.indexOf('## Modo de salida'))
+    for (const term of ['`get_skill`', 'De una en una, nunca en paralelo', 'una o dos lineas', 'una sola vez por tarea', 'despues del tester']) {
+      assert.ok(cierre.includes(term), `the closing must mention ${term}`)
+    }
+    assert.ok(!body.includes('midd-audit-unused-dependencies'), 'the agent carries no copy of the skills: it reads them from the MCP')
+  } finally {
+    rmSync(root, { recursive: true, force: true })
+  }
+})
 test('write scopes match the tools: only the owners write and the security review runs read-only', () => {
   const root = newRepo()
   try {
